@@ -314,4 +314,5 @@ items are:
 5. Reduce transmitter consumption with SX1262 sleep and STM32 Stop 2.
 6. Finish the managed Pi deployment, backups, and health monitoring.
 7. Export the complete editable EasyEDA hardware projects and revision-matched
-   manufacturing files.
+   manufacturing files, then develop and test printable transmitter and
+   receiver enclosures with editable CAD sources kept under `hardware/`.

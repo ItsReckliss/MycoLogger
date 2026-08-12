@@ -114,6 +114,20 @@ Maintenance rules:
 
 ## Hardware revision ideas
 
+- [ ] Develop printable enclosures for both current devices.
+  - [ ] Measure the transmitter PCB, battery, antenna, switch, debug button,
+        programming pads, and SCD41 airflow/clearance requirements.
+  - [ ] Design and prototype a transmitter enclosure with sensor ventilation,
+        antenna clearance, switch/button access, battery retention, and a
+        practical tub-mounting method.
+  - [ ] Measure the receiver PCB, antenna, USB connector, buttons, LEDs, and
+        programming/bootloader access requirements.
+  - [ ] Design and prototype a receiver enclosure with USB access, visible LEDs,
+        usable buttons, antenna clearance, ventilation, and stable mounting.
+  - [ ] Print and test fit both enclosures, revise tolerances, and verify that
+        neither enclosure significantly degrades LoRa range or sensor response.
+  - [ ] Commit editable CAD sources, revisioned STL/3MF exports, print settings,
+        hardware requirements, assembly notes, and photos under `hardware/`.
 - [ ] Export the complete editable EasyEDA transmitter project into
       `hardware/transmitter/easyeda/`.
 - [ ] Export the complete editable EasyEDA receiver project into
