@@ -24,6 +24,8 @@ Maintenance rules:
   - [x] ~~Build and flash transmitter v0.6.3 to Node 1.~~
   - [x] ~~Verify the live dashboard reports 3.759 V, consistent with the
         1.8427 V divider measurement and approximately 3.6854 V battery.~~
+  - [x] ~~Calibrate the final result by 0.9992 against a simultaneous 3.752 V
+        battery-lead measurement in transmitter v0.6.5.~~
 - [ ] Correct the SCD41 measurement strategy.
   - [ ] Discard the first single-shot CO2 result after physically powering the
         sensor on, as required for stabilization.

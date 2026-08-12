@@ -4,6 +4,8 @@
 #define BATTERY_ADC_PIN                 GPIO_PIN_0
 #define BATTERY_ADC_GPIO_PORT           GPIOA
 #define BATTERY_ADC_DIVIDER_MULTIPLIER  2UL
+#define BATTERY_CALIBRATION_NUMERATOR    9992UL
+#define BATTERY_CALIBRATION_DENOMINATOR  10000UL
 #define ADC_FULL_SCALE                  4095UL
 #define VREFINT_CAL_ADDRESS             ((const uint16_t *)0x1FFF6EA4UL)
 #define VREFINT_CAL_VDDA_MV             3000UL
@@ -172,6 +174,10 @@ bool BatteryADC_ReadMillivolts(uint16_t *battery_mv)
     calculated_mv = ((uint64_t)divider_raw * vdda_mv *
                      BATTERY_ADC_DIVIDER_MULTIPLIER +
                      (ADC_FULL_SCALE / 2UL)) / ADC_FULL_SCALE;
+    /* Calibrated at 3.752 V against a simultaneous battery-lead DMM reading. */
+    calculated_mv = (calculated_mv * BATTERY_CALIBRATION_NUMERATOR +
+                     (BATTERY_CALIBRATION_DENOMINATOR / 2UL)) /
+                    BATTERY_CALIBRATION_DENOMINATOR;
     if (calculated_mv > UINT16_MAX)
     {
         return false;

@@ -38,16 +38,16 @@ Last reviewed: 2026-08-12.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build: v0.6.3.
+- Transmitter source/build: v0.6.5.
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
-  flashed with v0.6.3 and registered to that permanent node ID.
+  flashed with v0.6.5 and registered to that permanent node ID.
 - Receiver source/build: v0.6.0.
 - Physical USB receiver: connected and receiving packets, but its installed
   version is still unknown/older. It must be put into its bootloader and flashed
   with receiver v0.6.0 before receiver version queries and the newest link/config
   behavior can be assumed.
-- Node 1 reports transmitter firmware `0.6.3` and battery voltage `3.759 V` to
-  the dashboard.
+- Node 1 reports transmitter firmware `0.6.5` and calibrated battery voltage
+  `3.752 V` to the dashboard, matching the simultaneous battery-lead reading.
 - The BTT Pi target is `mycopi.local`, but deployment of the current server as a
   managed Pi service is not complete.
 - Git remote: `https://github.com/ItsReckliss/MycoLogger.git`.
@@ -57,9 +57,9 @@ Last reviewed: 2026-08-12.
 Battery status: the physical PA0 divider measured `1.8427 V`, corresponding to
 approximately `3.6854 V` at the battery through the equal-value divider. Live
 ST-LINK inspection proved PA0 uses ADC channel 4 on this MCU, while its internal
-VREFINT uses channel 12. Transmitter v0.6.3 converts those channels separately
-to avoid stale EOC results and reports `3.759 V`; this is consistent with the
-multimeter measurement and expected battery voltage.
+VREFINT uses channel 12. Transmitter v0.6.5 converts those channels separately
+to avoid stale EOC results and applies a `0.9992` calibration factor derived
+from a simultaneous `3.752 V` battery-lead measurement.
 
 ## Hardware
 

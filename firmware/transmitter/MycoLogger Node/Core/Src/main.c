@@ -65,7 +65,7 @@
 #define DEFAULT_NODE_ID                0U
 #define FIRMWARE_VERSION_MAJOR         0U
 #define FIRMWARE_VERSION_MINOR         6U
-#define FIRMWARE_VERSION_PATCH         3U
+#define FIRMWARE_VERSION_PATCH         5U
 
 /* USER CODE END PD */
 
