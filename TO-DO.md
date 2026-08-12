@@ -118,8 +118,9 @@ Maintenance rules:
   - [ ] Measure the transmitter PCB, battery, antenna, switch, debug button,
         programming pads, and SCD41 airflow/clearance requirements.
   - [ ] Design and prototype a transmitter enclosure with sensor ventilation,
-        antenna clearance, switch/button access, battery retention, and a
-        practical tub-mounting method.
+        antenna clearance, switch/button access, battery retention, a practical
+        tub-mounting method, and external access to the next-revision SWD
+        programming connector beside the charging USB-C port.
   - [ ] Measure the receiver PCB, antenna, USB connector, buttons, LEDs, and
         programming/bootloader access requirements.
   - [ ] Design and prototype a receiver enclosure with USB access, visible LEDs,
@@ -137,6 +138,19 @@ Maintenance rules:
 - [ ] Review measured regulator and load-switch quiescent current against the
       intended battery-life target.
 - [ ] Add accessible current-measurement points or a removable power jumper.
+- [ ] Add a small keyed SMD JST-style SWD programming connector to the next
+      transmitter revision.
+  - [ ] Place it near the USB-C charging connector so charging and programming
+        use one accessible enclosure area.
+  - [ ] Route SWDIO, SWCLK, NRST, GND, and VTREF/3.3 V sensing; do not use the
+        connector to power the transmitter unless that behavior is explicitly
+        designed and protected.
+  - [ ] Choose a readily sourced locking/keyed series and document its exact
+        pinout, mating housing, contacts, and ST-LINK adapter cable.
+  - [ ] Orient and label the connector to prevent a reversed programming cable,
+        and verify assembly clearance and repeated mating durability.
+  - [ ] Ensure the final transmitter enclosure exposes the connector without
+        opening the case while protecting it from accidental shorts and debris.
 - [ ] Add ESD protection and review environmental protection for sensor and
       external-access points.
 - [ ] Review antenna placement, enclosure detuning, ground clearance, and RF
