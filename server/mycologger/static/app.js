@@ -33,6 +33,20 @@ const ui = {
   jarCount: document.querySelector("#jar-count"),
   jarGrid: document.querySelector("#jar-grid"),
   jarEmpty: document.querySelector("#jar-empty"),
+  archiveTabs: [...document.querySelectorAll("[data-archive-tab]")],
+  archivePanels: [...document.querySelectorAll("[data-archive-panel]")],
+  pastGrowGrid: document.querySelector("#past-grow-grid"),
+  pastGrowEmpty: document.querySelector("#past-grow-empty"),
+  pastGrowCount: document.querySelector("#past-grow-count"),
+  failedGrowGrid: document.querySelector("#failed-grow-grid"),
+  failedGrowEmpty: document.querySelector("#failed-grow-empty"),
+  failedGrowCount: document.querySelector("#failed-grow-count"),
+  archivedJarGrid: document.querySelector("#archived-jar-grid"),
+  archivedJarEmpty: document.querySelector("#archived-jar-empty"),
+  archivedJarCount: document.querySelector("#archived-jar-count"),
+  failedJarGrid: document.querySelector("#failed-jar-grid"),
+  failedJarEmpty: document.querySelector("#failed-jar-empty"),
+  failedJarCount: document.querySelector("#failed-jar-count"),
   addJar: document.querySelector("#add-jar"),
   spawnSelectedJars: document.querySelector("#spawn-selected-jars"),
   pendingCommandCount: document.querySelector("#pending-command-count"),
@@ -63,6 +77,9 @@ const ui = {
   growForm: document.querySelector("#grow-form"),
   growDialogTitle: document.querySelector("#grow-dialog-title"),
   growDialogNode: document.querySelector("#grow-dialog-node"),
+  growLifecycleBanner: document.querySelector("#grow-lifecycle-banner"),
+  growLifecycleTitle: document.querySelector("#grow-lifecycle-title"),
+  growLifecycleDetail: document.querySelector("#grow-lifecycle-detail"),
   growLastReading: document.querySelector("#grow-last-reading"),
   growReadingStrip: document.querySelector("#grow-reading-strip"),
   growDetailChart: document.querySelector("#grow-detail-chart"),
@@ -88,6 +105,9 @@ const ui = {
   growPhotoGallery: document.querySelector("#grow-photo-gallery"),
   growError: document.querySelector("#grow-error"),
   growSave: document.querySelector("#grow-save"),
+  growArchive: document.querySelector("#grow-archive"),
+  growContaminated: document.querySelector("#grow-contaminated"),
+  growDelete: document.querySelector("#grow-delete"),
   growSpawnHistory: document.querySelector("#grow-spawn-history"),
   growSpawnSummary: document.querySelector("#grow-spawn-summary"),
   growSpawnContent: document.querySelector("#grow-spawn-content"),
@@ -96,6 +116,8 @@ const ui = {
   jarDialogTitle: document.querySelector("#jar-dialog-title"),
   jarDialogStatus: document.querySelector("#jar-dialog-status"),
   jarLockedBanner: document.querySelector("#jar-locked-banner"),
+  jarLockedTitle: document.querySelector("#jar-locked-title"),
+  jarLockedDetail: document.querySelector("#jar-locked-detail"),
   jarName: document.querySelector("#jar-name"),
   jarCulture: document.querySelector("#jar-culture"),
   jarSpecies: document.querySelector("#jar-species"),
@@ -122,18 +144,34 @@ const ui = {
   jarSave: document.querySelector("#jar-save"),
   jarSpawn: document.querySelector("#jar-spawn"),
   jarLockToggle: document.querySelector("#jar-lock-toggle"),
+  jarArchive: document.querySelector("#jar-archive"),
+  jarContaminated: document.querySelector("#jar-contaminated"),
+  jarDelete: document.querySelector("#jar-delete"),
   spawnDialog: document.querySelector("#spawn-dialog"),
   spawnForm: document.querySelector("#spawn-form"),
   spawnSourceName: document.querySelector("#spawn-source-name"),
   spawnGroups: document.querySelector("#spawn-groups"),
   spawnError: document.querySelector("#spawn-error"),
   spawnConfirm: document.querySelector("#spawn-confirm"),
+  lifecycleDialog: document.querySelector("#lifecycle-dialog"),
+  lifecycleForm: document.querySelector("#lifecycle-form"),
+  lifecycleTitle: document.querySelector("#lifecycle-title"),
+  lifecycleSubtitle: document.querySelector("#lifecycle-subtitle"),
+  lifecycleExplanation: document.querySelector("#lifecycle-explanation"),
+  lifecycleDateLabel: document.querySelector("#lifecycle-date-label"),
+  lifecycleDate: document.querySelector("#lifecycle-date"),
+  lifecycleFlushLabel: document.querySelector("#lifecycle-flush-label"),
+  lifecycleFirstFlush: document.querySelector("#lifecycle-first-flush"),
+  lifecycleReason: document.querySelector("#lifecycle-reason"),
+  lifecycleError: document.querySelector("#lifecycle-error"),
+  lifecycleConfirm: document.querySelector("#lifecycle-confirm"),
   toast: document.querySelector("#toast"),
 };
 
 let cachedNodes = [];
 let cachedGrows = [];
 let cachedJars = [];
+let cachedArchive = { past_grows: [], failed_grows: [], archived_jars: [], failed_jars: [] };
 let editingNodeId = null;
 let editingGrow = null;
 let editingPinDates = [];
@@ -144,6 +182,7 @@ let editingBreakShakeDates = [];
 let queuedJarPhotos = [];
 let selectedJarIds = new Set();
 let spawningJarIds = [];
+let lifecycleAction = null;
 const chartScaleCache = new Map();
 const growRangeHours = new Map();
 const GROW_RANGES = [
@@ -193,7 +232,7 @@ function makeReading(value, label) {
 
 function formatDate(value) {
   if (!value) return "Not set";
-  const parsed = new Date(`${value}T12:00:00`);
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value);
   return Number.isNaN(parsed.valueOf()) ? value : parsed.toLocaleDateString();
 }
 
@@ -432,7 +471,7 @@ function makeGrowReading(value, label) {
 
 function makeGrowCard(grow) {
   const card = document.createElement("article");
-  card.className = "grow-card";
+  card.className = `grow-card${grow.archive_category ? " archived-card" : ""}${grow.archive_category === "failed_grow" ? " failed-card" : ""}`;
   card.tabIndex = 0;
   card.setAttribute("role", "button");
   card.setAttribute("aria-label", `Open ${grow.title}`);
@@ -450,7 +489,11 @@ function makeGrowCard(grow) {
   title.append(titleText, nodeText);
   const stage = document.createElement("span");
   stage.className = `stage-badge ${grow.stage}`;
-  stage.textContent = grow.stage;
+  stage.textContent = grow.archive_category === "failed_grow"
+    ? "failed"
+    : grow.archive_category === "past_grow"
+      ? (grow.contaminated_on ? "contaminated after flush" : "finished")
+      : grow.stage;
   header.append(title, stage);
 
   const activeHours = rangeForGrow(grow.tub_id);
@@ -479,7 +522,16 @@ function makeGrowCard(grow) {
   stb.textContent = `STB: ${formatDate(grow.spawn_to_bulk_on)}`;
   const photos = document.createElement("span");
   photos.textContent = `${grow.photo_count} photo${grow.photo_count === 1 ? "" : "s"}`;
-  footer.append(stb, photos);
+  footer.append(stb);
+  if (grow.archive_category) {
+    const outcome = document.createElement("span");
+    outcome.textContent = grow.contaminated_on
+      ? `Contaminated: ${formatDate(grow.contaminated_on)}`
+      : `Finished: ${formatDate(grow.completed_on)}`;
+    outcome.title = grow.lifecycle_reason || "";
+    footer.append(outcome);
+  }
+  footer.append(photos);
   card.append(header, rangeSelector, chart, legend, readings, footer);
 
   const open = () => openGrow(grow.tub_id);
@@ -510,9 +562,9 @@ function makeJarFact(value, label) {
   return fact;
 }
 
-function makeJarCard(jar) {
+function makeJarCard(jar, { selectable = true } = {}) {
   const card = document.createElement("article");
-  card.className = `grow-card jar-card${selectedJarIds.has(jar.jar_id) ? " selected" : ""}`;
+  card.className = `grow-card jar-card${selectedJarIds.has(jar.jar_id) ? " selected" : ""}${jar.archive_category ? " archived-card" : ""}${jar.archive_category === "failed_jar" ? " failed-card" : ""}`;
   card.tabIndex = 0;
   card.setAttribute("role", "button");
   card.setAttribute("aria-label", `Open ${jar.name}`);
@@ -526,22 +578,31 @@ function makeJarCard(jar) {
   subtitle.textContent = [jar.culture || "Culture not set", jar.species].filter(Boolean).join(" · ");
   title.append(name, subtitle);
   header.append(title);
-  const selection = document.createElement("label");
-  selection.className = "jar-select";
-  selection.title = `Select ${jar.name} for spawning`;
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = selectedJarIds.has(jar.jar_id);
-  checkbox.setAttribute("aria-label", `Select ${jar.name}`);
-  checkbox.addEventListener("click", (event) => event.stopPropagation());
-  checkbox.addEventListener("change", () => {
-    if (checkbox.checked) selectedJarIds.add(jar.jar_id);
-    else selectedJarIds.delete(jar.jar_id);
-    card.classList.toggle("selected", checkbox.checked);
-    updateJarSelectionControls();
-  });
-  selection.addEventListener("click", (event) => event.stopPropagation());
-  selection.append(checkbox);
+  if (jar.archive_category) {
+    const outcome = document.createElement("span");
+    outcome.className = `stage-badge${jar.archive_category === "failed_jar" ? " failed" : " complete"}`;
+    outcome.textContent = jar.archive_category === "failed_jar" ? "failed" : "archived";
+    header.append(outcome);
+  }
+  let selection = null;
+  if (selectable) {
+    selection = document.createElement("label");
+    selection.className = "jar-select";
+    selection.title = `Select ${jar.name} for spawning`;
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedJarIds.has(jar.jar_id);
+    checkbox.setAttribute("aria-label", `Select ${jar.name}`);
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selectedJarIds.add(jar.jar_id);
+      else selectedJarIds.delete(jar.jar_id);
+      card.classList.toggle("selected", checkbox.checked);
+      updateJarSelectionControls();
+    });
+    selection.addEventListener("click", (event) => event.stopPropagation());
+    selection.append(checkbox);
+  }
   const facts = document.createElement("div");
   facts.className = "jar-card-body";
   facts.append(
@@ -557,7 +618,7 @@ function makeJarCard(jar) {
   );
   const note = document.createElement("div");
   note.className = "jar-card-note";
-  note.textContent = jar.notes || jar.prep_tek || "No notes recorded.";
+  note.textContent = jar.lifecycle_reason || jar.notes || jar.prep_tek || "No notes recorded.";
   const footer = document.createElement("div");
   footer.className = "grow-card-footer";
   const weight = document.createElement("span");
@@ -566,7 +627,7 @@ function makeJarCard(jar) {
   const photos = document.createElement("span");
   photos.textContent = `${jar.photo_count} photo${jar.photo_count === 1 ? "" : "s"}`;
   footer.append(weight, photos);
-  card.append(selection, header, facts, note, footer);
+  card.append(...[selection, header, facts, note, footer].filter(Boolean));
   const open = () => openJar(jar.jar_id);
   card.addEventListener("click", open);
   card.addEventListener("keydown", (event) => {
@@ -627,6 +688,53 @@ async function refreshGrows() {
   }
 }
 
+function renderArchiveCollection(grid, empty, count, records, makeCard) {
+  grid.replaceChildren(...records.map(makeCard));
+  grid.hidden = records.length === 0;
+  empty.hidden = records.length !== 0;
+  count.textContent = records.length.toLocaleString();
+}
+
+function renderArchive() {
+  renderArchiveCollection(
+    ui.pastGrowGrid, ui.pastGrowEmpty, ui.pastGrowCount,
+    cachedArchive.past_grows, makeGrowCard,
+  );
+  renderArchiveCollection(
+    ui.failedGrowGrid, ui.failedGrowEmpty, ui.failedGrowCount,
+    cachedArchive.failed_grows, makeGrowCard,
+  );
+  renderArchiveCollection(
+    ui.archivedJarGrid, ui.archivedJarEmpty, ui.archivedJarCount,
+    cachedArchive.archived_jars, (jar) => makeJarCard(jar, { selectable: false }),
+  );
+  renderArchiveCollection(
+    ui.failedJarGrid, ui.failedJarEmpty, ui.failedJarCount,
+    cachedArchive.failed_jars, (jar) => makeJarCard(jar, { selectable: false }),
+  );
+}
+
+async function refreshArchive() {
+  try {
+    const response = await fetch("/api/archive?hours=72", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    const loadCustomRanges = (records) => Promise.all(records.map(async (grow) => {
+      const hours = rangeForGrow(grow.tub_id);
+      if (hours === 72) return grow;
+      const customResponse = await fetch(`/api/grows/${grow.tub_id}?hours=${hours}`, { cache: "no-store" });
+      if (!customResponse.ok) return grow;
+      return (await customResponse.json()).grow;
+    }));
+    data.past_grows = await loadCustomRanges(data.past_grows);
+    data.failed_grows = await loadCustomRanges(data.failed_grows);
+    cachedArchive = data;
+    renderArchive();
+  } catch (error) {
+    console.error("Could not load archive", error);
+  }
+}
+
 async function selectGrowRange(tubId, hours) {
   growRangeHours.set(Number(tubId), Number(hours));
   try {
@@ -635,7 +743,12 @@ async function selectGrowRange(tubId, hours) {
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     const index = cachedGrows.findIndex((grow) => grow.tub_id === Number(tubId));
     if (index >= 0) cachedGrows[index] = data.grow;
+    [cachedArchive.past_grows, cachedArchive.failed_grows].forEach((records) => {
+      const archiveIndex = records.findIndex((grow) => grow.tub_id === Number(tubId));
+      if (archiveIndex >= 0) records[archiveIndex] = data.grow;
+    });
     renderGrows();
+    renderArchive();
     if (ui.growDialog.open && editingGrow?.tub_id === Number(tubId)) {
       populateGrowDialog(data.grow);
     }
@@ -1030,6 +1143,23 @@ function populateGrowDialog(grow) {
   ui.growCompletedDate.value = grow.completed_on || "";
   ui.growNotes.value = grow.notes || "";
   ui.growActive.checked = grow.active;
+  ui.growActive.disabled = Boolean(grow.archive_category);
+  ui.growLifecycleBanner.hidden = !grow.archive_category;
+  ui.growLifecycleBanner.classList.toggle("failed", grow.archive_category === "failed_grow");
+  ui.growLifecycleTitle.textContent = grow.archive_category === "failed_grow"
+    ? "Failed grow · contaminated before first flush"
+    : grow.contaminated_on
+      ? "Past grow · contaminated after a flush"
+      : "Past grow · finished";
+  ui.growLifecycleDetail.textContent = [
+    grow.contaminated_on
+      ? `Contaminated ${formatDate(grow.contaminated_on)}`
+      : `Finished ${formatDate(grow.completed_on)}`,
+    grow.lifecycle_reason,
+  ].filter(Boolean).join(" · ");
+  ui.growArchive.hidden = !grow.active || Boolean(grow.archive_category);
+  ui.growContaminated.hidden = !grow.active || Boolean(grow.archive_category);
+  ui.growDelete.hidden = false;
   ui.growPinDate.value = "";
   if (openingGrow) {
     ui.growPhotoDate.value = "";
@@ -1088,7 +1218,7 @@ async function saveGrow(event) {
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     ui.growDialog.close();
     showToast("Grow saved.");
-    await Promise.all([refreshDashboard(), refreshGrows(), loadTubOptions()]);
+    await Promise.all([refreshDashboard(), refreshGrows(), refreshArchive(), loadTubOptions()]);
   } catch (error) {
     ui.growError.textContent = error.message || "Could not save grow.";
     ui.growError.hidden = false;
@@ -1335,7 +1465,13 @@ function populateJarDialog(jar) {
   editingBreakShakeDates = [...(jar?.break_shake_dates || [])];
   ui.jarDialogTitle.textContent = jar?.name || "New jars";
   ui.jarDialogStatus.textContent = jar
-    ? (jar.status === "active" ? "Current jar" : `Spawned to ${jar.spawned_to_tub_name || "tub"}`)
+    ? jar.status === "active"
+      ? "Current jar"
+      : jar.status === "spawned"
+        ? `Spawned to ${jar.spawned_to_tub_name || "tub"}`
+        : jar.status === "failed"
+          ? "Failed jar · contaminated"
+          : "Archived jar"
     : "Create a current jar";
   ui.jarName.value = jar?.name || "";
   ui.jarCulture.value = jar?.culture || "";
@@ -1357,9 +1493,25 @@ function populateJarDialog(jar) {
   ui.jarPhotoDate.value = "";
   ui.jarPhotoCaption.value = "";
   ui.jarError.hidden = true;
+  ui.jarLockedTitle.textContent = jar?.status === "failed"
+    ? "Failed jar record locked"
+    : jar?.status === "archived"
+      ? "Archived jar record locked"
+      : "Spawn record locked";
+  ui.jarLockedDetail.textContent = jar?.status === "failed"
+    ? [`Contaminated ${formatDate(jar.contaminated_on)}`, jar.lifecycle_reason]
+      .filter(Boolean).join(" · ")
+    : jar?.status === "archived"
+      ? [`Archived ${formatDate(jar.archived_utc?.slice(0, 10))}`, jar.lifecycle_reason]
+        .filter(Boolean).join(" · ")
+      : "This historical record is protected. Unlock it only to correct old data.";
   clearJarPhotoQueue();
   setJarEditorLocked(Boolean(jar?.locked));
   ui.jarCountInput.disabled = Boolean(jar);
+  const current = jar?.status === "active";
+  ui.jarArchive.hidden = !current;
+  ui.jarContaminated.hidden = !current;
+  ui.jarDelete.hidden = !jar;
 }
 
 async function openJar(jarId) {
@@ -1377,6 +1529,108 @@ async function openJar(jarId) {
 function openNewJar() {
   populateJarDialog(null);
   ui.jarDialog.showModal();
+}
+
+function todayForInput() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function openLifecycleDialog(kind, contaminated) {
+  const record = kind === "grow" ? editingGrow : editingJar;
+  if (!record) return;
+  lifecycleAction = {
+    kind,
+    contaminated,
+    id: kind === "grow" ? record.tub_id : record.jar_id,
+    name: record.name,
+  };
+  const noun = kind === "grow" ? "grow" : "jar";
+  ui.lifecycleTitle.textContent = contaminated
+    ? `Mark ${noun} contaminated`
+    : `Archive ${noun}`;
+  ui.lifecycleSubtitle.textContent = record.name;
+  ui.lifecycleDateLabel.firstChild.textContent = contaminated
+    ? "Contamination date"
+    : kind === "grow" ? "Finished date" : "Archive date";
+  ui.lifecycleDate.value = todayForInput();
+  ui.lifecycleReason.value = "";
+  ui.lifecycleFirstFlush.value = "no";
+  ui.lifecycleFlushLabel.hidden = !(kind === "grow" && contaminated);
+  ui.lifecycleExplanation.textContent = kind === "grow" && contaminated
+    ? "A contaminated grow is filed under Failed grows if it did not produce a first flush. If it produced at least one flush, it is retained under Past grows."
+    : contaminated
+      ? "This removes the jar from Current jars and files it under Failed jars."
+      : kind === "grow"
+        ? "This releases its sensor node and moves the complete record to Past grows."
+        : "This removes the jar from Current jars and retains it under Archived jars.";
+  ui.lifecycleConfirm.textContent = contaminated ? "Mark contaminated" : "Archive";
+  ui.lifecycleConfirm.className = `button ${contaminated ? "caution" : "primary"}`;
+  ui.lifecycleError.hidden = true;
+  ui.lifecycleDialog.showModal();
+}
+
+async function submitLifecycle(event) {
+  event.preventDefault();
+  if (!lifecycleAction) return;
+  ui.lifecycleConfirm.disabled = true;
+  ui.lifecycleError.hidden = true;
+  try {
+    const base = lifecycleAction.kind === "grow" ? "grows" : "jars";
+    const response = await fetch(`/api/${base}/${lifecycleAction.id}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contaminated: lifecycleAction.contaminated,
+        first_flush_harvested: ui.lifecycleFirstFlush.value === "yes",
+        occurred_on: ui.lifecycleDate.value,
+        reason: ui.lifecycleReason.value.trim(),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    const message = lifecycleAction.contaminated
+      ? `${lifecycleAction.name} marked contaminated and archived.`
+      : `${lifecycleAction.name} archived.`;
+    ui.lifecycleDialog.close();
+    if (lifecycleAction.kind === "grow") ui.growDialog.close();
+    else ui.jarDialog.close();
+    lifecycleAction = null;
+    showToast(message);
+    await Promise.all([
+      refreshDashboard(), refreshGrows(), refreshJars(), refreshArchive(), loadTubOptions(),
+    ]);
+  } catch (error) {
+    ui.lifecycleError.textContent = error.message || "Could not archive record.";
+    ui.lifecycleError.hidden = false;
+  } finally {
+    ui.lifecycleConfirm.disabled = false;
+  }
+}
+
+async function deleteLifecycleRecord(kind) {
+  const record = kind === "grow" ? editingGrow : editingJar;
+  if (!record) return;
+  const noun = kind === "grow" ? "tub/grow" : "jar";
+  if (!window.confirm(`Permanently delete ${record.name}? This deletes its notes and photos and cannot be undone.`)) return;
+  try {
+    const base = kind === "grow" ? "grows" : "jars";
+    const id = kind === "grow" ? record.tub_id : record.jar_id;
+    const response = await fetch(`/api/${base}/${id}`, { method: "DELETE" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    if (kind === "grow") ui.growDialog.close();
+    else ui.jarDialog.close();
+    showToast(`${record.name} ${noun} permanently deleted.`);
+    await Promise.all([
+      refreshDashboard(), refreshGrows(), refreshJars(), refreshArchive(), loadTubOptions(),
+    ]);
+  } catch (error) {
+    const target = kind === "grow" ? ui.growError : ui.jarError;
+    target.textContent = error.message || "Could not delete record.";
+    target.hidden = false;
+  }
 }
 
 function addBreakShakeDate() {
@@ -1439,7 +1693,7 @@ async function saveJar(event) {
     showToast(created
       ? `${quantity} individual jar${quantity === 1 ? "" : "s"} created.`
       : "Jar saved.");
-    await Promise.all([refreshDashboard(), refreshGrows(), refreshJars()]);
+    await Promise.all([refreshDashboard(), refreshGrows(), refreshJars(), refreshArchive()]);
   } catch (error) {
     ui.jarError.textContent = error.message || "Could not save jar.";
     ui.jarError.hidden = false;
@@ -1741,6 +1995,12 @@ async function refreshDashboard() {
 }
 
 ui.navItems.forEach((item) => item.addEventListener("click", () => showView(item.dataset.view)));
+ui.archiveTabs.forEach((tab) => tab.addEventListener("click", () => {
+  ui.archiveTabs.forEach((item) => item.classList.toggle("active", item === tab));
+  ui.archivePanels.forEach((panel) => panel.classList.toggle(
+    "active", panel.dataset.archivePanel === tab.dataset.archiveTab,
+  ));
+}));
 ui.openViewButtons.forEach((button) => button.addEventListener("click", () => showView(button.dataset.openView)));
 ui.menuButton.addEventListener("click", () => ui.sidebar.classList.toggle("open"));
 ui.nodeFilter.addEventListener("input", renderNodes);
@@ -1754,6 +2014,9 @@ document.querySelector("#grow-cancel").addEventListener("click", () => ui.growDi
 document.querySelector("#grow-add-pin").addEventListener("click", addPinDate);
 ui.growUploadPhoto.addEventListener("click", uploadGrowPhoto);
 ui.growPhotoFile.addEventListener("change", queueSelectedPhotos);
+ui.growArchive.addEventListener("click", () => openLifecycleDialog("grow", false));
+ui.growContaminated.addEventListener("click", () => openLifecycleDialog("grow", true));
+ui.growDelete.addEventListener("click", () => deleteLifecycleRecord("grow"));
 ui.addJar.addEventListener("click", openNewJar);
 ui.jarForm.addEventListener("submit", saveJar);
 document.querySelector("#jar-close").addEventListener("click", () => ui.jarDialog.close());
@@ -1763,17 +2026,25 @@ ui.jarPhotoFile.addEventListener("change", queueSelectedJarPhotos);
 ui.jarUploadPhoto.addEventListener("click", () => uploadJarPhotos());
 ui.jarLockToggle.addEventListener("click", toggleJarLock);
 ui.jarSpawn.addEventListener("click", () => openSpawnDialog());
+ui.jarArchive.addEventListener("click", () => openLifecycleDialog("jar", false));
+ui.jarContaminated.addEventListener("click", () => openLifecycleDialog("jar", true));
+ui.jarDelete.addEventListener("click", () => deleteLifecycleRecord("jar"));
 ui.spawnSelectedJars.addEventListener("click", () => openSpawnDialog([...selectedJarIds]));
 ui.spawnForm.addEventListener("submit", confirmSpawnToTub);
 document.querySelector("#spawn-close").addEventListener("click", () => ui.spawnDialog.close());
 document.querySelector("#spawn-cancel").addEventListener("click", () => ui.spawnDialog.close());
+ui.lifecycleForm.addEventListener("submit", submitLifecycle);
+document.querySelector("#lifecycle-close").addEventListener("click", () => ui.lifecycleDialog.close());
+document.querySelector("#lifecycle-cancel").addEventListener("click", () => ui.lifecycleDialog.close());
 ui.browserHost.textContent = window.location.host;
 
 refreshDashboard();
 refreshGrows();
 refreshJars();
+refreshArchive();
 window.setInterval(() => {
   refreshDashboard();
   refreshGrows();
   refreshJars();
+  refreshArchive();
 }, 5000);

@@ -36,7 +36,7 @@ with environment-specific paths and serial-port names.
 
 Last reviewed: 2026-08-12.
 
-- Server: v0.7.0, currently running locally on the Windows development PC at
+- Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
 - Transmitter source/build: v0.6.0.
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, successfully
@@ -227,6 +227,9 @@ Implemented dashboard/data features include:
   1 day, 3 day, 7 day, and 1 month ranges;
 - current spawn jars, preparation/inoculation/break-and-shake records, and
   culture/species-aware spawning into tubs;
+- explicit tub and jar lifecycle actions, including contamination outcomes,
+  sensor release, permanent deletion, and an Archive split into Past Grows,
+  Failed Grows, Archived Jars, and Failed Jars;
 - multiple queued photo uploads, EXIF capture times, and environmental conditions
   associated with the nearest grow measurement;
 - node/tub assignment history so reusing a sensor does not relabel old data.

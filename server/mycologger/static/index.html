@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#10271d" />
     <title>MycoLogger</title>
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/static/styles.css?v=0.7.0" />
-    <script src="/static/app.js?v=0.7.0" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=0.8.0" />
+    <script src="/static/app.js?v=0.8.0" defer></script>
   </head>
   <body>
     <div class="app-shell">
@@ -35,6 +35,9 @@
           <button class="nav-item" type="button" data-view="grows">
             <span class="nav-icon">◆</span><span>Tubs &amp; jars</span>
           </button>
+          <button class="nav-item" type="button" data-view="archive">
+            <span class="nav-icon">▣</span><span>Archive</span>
+          </button>
           <button class="nav-item" type="button" data-view="nodes">
             <span class="nav-icon">◉</span><span>Nodes</span>
           </button>
@@ -54,7 +57,7 @@
 
         <div class="sidebar-footer">
           <span>MycoLogger server</span>
-          <strong>v0.7.0</strong>
+          <strong>v0.8.0</strong>
         </div>
       </aside>
 
@@ -124,6 +127,22 @@
             <div class="panel empty-state jar-empty" id="jar-empty"><strong>No current jars yet.</strong><span>Add a jar batch to start tracking grain spawn.</span></div>
           </section>
 
+          <section class="view" data-view-panel="archive">
+            <div class="section-heading">
+              <div><h2>Archive</h2><p>Finished grows, failed grows, and jars no longer in active use.</p></div>
+            </div>
+            <div class="archive-tabs" role="tablist" aria-label="Archive categories">
+              <button class="archive-tab active" type="button" data-archive-tab="past-grows">Past grows <span id="past-grow-count">0</span></button>
+              <button class="archive-tab" type="button" data-archive-tab="failed-grows">Failed grows <span id="failed-grow-count">0</span></button>
+              <button class="archive-tab" type="button" data-archive-tab="archived-jars">Archived jars <span id="archived-jar-count">0</span></button>
+              <button class="archive-tab" type="button" data-archive-tab="failed-jars">Failed jars <span id="failed-jar-count">0</span></button>
+            </div>
+            <section class="archive-panel active" data-archive-panel="past-grows"><div class="grow-grid" id="past-grow-grid"></div><div class="panel empty-state" id="past-grow-empty"><strong>No past grows.</strong><span>Finished tubs and contaminated tubs that produced a flush appear here.</span></div></section>
+            <section class="archive-panel" data-archive-panel="failed-grows"><div class="grow-grid" id="failed-grow-grid"></div><div class="panel empty-state" id="failed-grow-empty"><strong>No failed grows.</strong><span>Grows contaminated before their first flush appear here.</span></div></section>
+            <section class="archive-panel" data-archive-panel="archived-jars"><div class="grow-grid jar-grid" id="archived-jar-grid"></div><div class="panel empty-state" id="archived-jar-empty"><strong>No archived jars.</strong><span>Clean jars removed from current use appear here.</span></div></section>
+            <section class="archive-panel" data-archive-panel="failed-jars"><div class="grow-grid jar-grid" id="failed-jar-grid"></div><div class="panel empty-state" id="failed-jar-empty"><strong>No failed jars.</strong><span>Contaminated jars appear here.</span></div></section>
+          </section>
+
           <section class="view" data-view-panel="nodes">
             <div class="section-heading"><div><h2>Nodes</h2><p>Transmitters known to this base station.</p></div><button class="button" type="button" disabled>+ Add node</button></div>
             <div class="panel">
@@ -157,7 +176,7 @@
 
           <section class="view" data-view-panel="system">
             <div class="section-heading"><div><h2>System</h2><p>Server information and diagnostics.</p></div><a class="button" href="/api/docs" target="_blank" rel="noreferrer">Open API docs</a></div>
-              <div class="panel settings-panel"><h3>Server</h3><div class="property-list"><div><span>Application</span><strong>MycoLogger</strong></div><div><span>Version</span><strong>0.7.0</strong></div><div><span>API status</span><strong id="api-status">Checking</strong></div><div><span>Storage</span><strong>SQLite / WAL</strong></div><div><span>Host</span><strong id="browser-host">—</strong></div></div></div>
+              <div class="panel settings-panel"><h3>Server</h3><div class="property-list"><div><span>Application</span><strong>MycoLogger</strong></div><div><span>Version</span><strong>0.8.0</strong></div><div><span>API status</span><strong id="api-status">Checking</strong></div><div><span>Storage</span><strong>SQLite / WAL</strong></div><div><span>Host</span><strong id="browser-host">—</strong></div></div></div>
           </section>
         </main>
       </section>
@@ -203,6 +222,7 @@
           <button class="dialog-close" id="grow-close" type="button" aria-label="Close">×</button>
         </div>
         <div class="dialog-body grow-dialog-body">
+          <div class="locked-banner lifecycle-banner" id="grow-lifecycle-banner" hidden><strong id="grow-lifecycle-title">Archived grow</strong><span id="grow-lifecycle-detail"></span></div>
           <section class="dialog-section grow-reading-section">
             <div class="section-line"><h3 id="grow-chart-title">Last 3 days</h3><span id="grow-last-reading">No readings</span></div>
             <div class="grow-range-selector" id="grow-detail-ranges" aria-label="Graph time range"></div>
@@ -222,7 +242,7 @@
               <label>Spawn ratio<input id="grow-spawn-ratio" maxlength="32" placeholder="1:2" /></label>
               <label>Completed<input id="grow-completed-date" type="date" /></label>
               <label class="wide">Notes<textarea id="grow-notes" maxlength="10000" rows="6" placeholder="Observations, misting, surface conditions, harvest weights..."></textarea></label>
-              <label class="check-label"><input id="grow-active" type="checkbox" /> Show in Current tubs</label>
+              <label class="check-label" hidden><input id="grow-active" type="checkbox" /> Show in Current tubs</label>
             </div>
           </section>
 
@@ -251,8 +271,8 @@
           <div class="dialog-error" id="grow-error" hidden></div>
         </div>
         <div class="dialog-footer">
-          <button class="button" id="grow-cancel" type="button">Cancel</button>
-          <button class="button primary" id="grow-save" type="submit">Save grow</button>
+          <div class="lifecycle-actions"><button class="button" id="grow-archive" type="button">Archive finished</button><button class="button caution" id="grow-contaminated" type="button">Mark contaminated</button><button class="button danger" id="grow-delete" type="button">Delete</button></div>
+          <div><button class="button" id="grow-cancel" type="button">Cancel</button> <button class="button primary" id="grow-save" type="submit">Save grow</button></div>
         </div>
       </form>
     </dialog>
@@ -263,7 +283,7 @@
           <button class="dialog-close" id="jar-close" type="button" aria-label="Close">&times;</button>
         </div>
         <div class="dialog-body grow-dialog-body">
-          <div class="locked-banner" id="jar-locked-banner" hidden><strong>Spawn record locked</strong><span>This jar has already been rolled into a tub. Unlock it only to correct historical data.</span></div>
+          <div class="locked-banner" id="jar-locked-banner" hidden><strong id="jar-locked-title">Spawn record locked</strong><span id="jar-locked-detail">This jar has already been rolled into a tub. Unlock it only to correct historical data.</span></div>
           <section class="dialog-section">
             <h3>Jar information</h3>
             <div class="dialog-grid">
@@ -301,7 +321,7 @@
           <div class="dialog-error" id="jar-error" hidden></div>
         </div>
         <div class="dialog-footer split-footer">
-          <div><button class="button primary" id="jar-spawn" type="button">Spawn this jar</button><button class="button caution" id="jar-lock-toggle" type="button" hidden>Unlock historical record</button></div>
+          <div><button class="button primary" id="jar-spawn" type="button">Spawn this jar</button><button class="button" id="jar-archive" type="button">Archive</button><button class="button caution" id="jar-contaminated" type="button">Mark contaminated</button><button class="button danger" id="jar-delete" type="button">Delete</button><button class="button caution" id="jar-lock-toggle" type="button" hidden>Unlock historical record</button></div>
           <div><button class="button" id="jar-cancel" type="button">Cancel</button><button class="button primary" id="jar-save" type="submit">Save jar</button></div>
         </div>
       </form>
@@ -314,6 +334,23 @@
           <div class="dialog-error" id="spawn-error" hidden></div>
         </div>
         <div class="dialog-footer"><button class="button" id="spawn-cancel" type="button">Cancel</button><button class="button primary" id="spawn-confirm" type="submit">Create current tub</button></div>
+      </form>
+    </dialog>
+    <dialog class="settings-dialog" id="lifecycle-dialog">
+      <form id="lifecycle-form">
+        <div class="dialog-header"><div><h2 id="lifecycle-title">Archive record</h2><span id="lifecycle-subtitle"></span></div><button class="dialog-close" id="lifecycle-close" type="button" aria-label="Close">&times;</button></div>
+        <div class="dialog-body">
+          <section class="dialog-section">
+            <p class="form-note" id="lifecycle-explanation"></p>
+            <div class="dialog-grid">
+              <label id="lifecycle-date-label">Date<input id="lifecycle-date" type="date" required /></label>
+              <label id="lifecycle-flush-label" hidden>First flush harvested?<select id="lifecycle-first-flush"><option value="no">No — classify as failed grow</option><option value="yes">Yes — classify under past grows</option></select></label>
+              <label class="wide">Reason / notes<textarea id="lifecycle-reason" maxlength="2000" rows="4" placeholder="Optional details about completion, contamination, or disposal..."></textarea></label>
+            </div>
+          </section>
+          <div class="dialog-error" id="lifecycle-error" hidden></div>
+        </div>
+        <div class="dialog-footer"><button class="button" id="lifecycle-cancel" type="button">Cancel</button><button class="button primary" id="lifecycle-confirm" type="submit">Archive</button></div>
       </form>
     </dialog>
     <div class="toast" id="toast" hidden></div>

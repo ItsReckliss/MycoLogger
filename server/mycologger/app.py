@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .database import (
+    archive_grow,
+    archive_spawn_jar,
     add_spawn_jar_photo,
     add_grow_photo,
     cancel_node_reservation,
@@ -23,8 +25,11 @@ from .database import (
     create_spawn_jar,
     create_spawn_jars,
     delete_spawn_jar_photo,
+    delete_spawn_jar,
+    delete_grow,
     delete_grow_photo,
     get_current_grows,
+    get_archived_grows,
     get_counts,
     get_grow,
     get_grow_photo,
@@ -107,6 +112,13 @@ class SpawnJarUpdate(BaseModel):
 
 class SpawnJarLockUpdate(BaseModel):
     locked: bool
+
+
+class LifecycleArchiveRequest(BaseModel):
+    contaminated: bool = False
+    first_flush_harvested: bool = False
+    occurred_on: date
+    reason: str = Field(default="", max_length=2000)
 
 
 class SpawnJarBulkCreate(SpawnJarUpdate):
@@ -334,6 +346,20 @@ def current_grows(hours: int = Query(default=72, ge=1, le=744)) -> dict[str, obj
     return {"grows": get_current_grows(settings.database_path, hours=hours)}
 
 
+@app.get("/api/archive")
+def archive(hours: int = Query(default=72, ge=1, le=744)) -> dict[str, object]:
+    return {
+        "past_grows": get_archived_grows(
+            settings.database_path, category="past_grow", hours=hours
+        ),
+        "failed_grows": get_archived_grows(
+            settings.database_path, category="failed_grow", hours=hours
+        ),
+        "archived_jars": get_spawn_jars(settings.database_path, status="archived"),
+        "failed_jars": get_spawn_jars(settings.database_path, status="failed"),
+    }
+
+
 @app.get("/api/grows/{tub_id}")
 def grow(tub_id: int, hours: int = Query(default=72, ge=1, le=744)) -> dict[str, object]:
     result = get_grow(settings.database_path, tub_id, hours=hours)
@@ -374,6 +400,37 @@ def save_grow(tub_id: int, update: GrowUpdate) -> dict[str, object]:
     return {"grow": result}
 
 
+@app.post("/api/grows/{tub_id}/archive")
+def archive_current_grow(
+    tub_id: int, update: LifecycleArchiveRequest
+) -> dict[str, object]:
+    try:
+        result = archive_grow(
+            settings.database_path,
+            tub_id,
+            contaminated=update.contaminated,
+            first_flush_harvested=update.first_flush_harvested,
+            occurred_on=update.occurred_on.isoformat(),
+            reason=update.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Grow not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"grow": result}
+
+
+@app.delete("/api/grows/{tub_id}")
+def remove_grow(tub_id: int) -> dict[str, bool]:
+    try:
+        photo_names = delete_grow(settings.database_path, tub_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Grow not found") from exc
+    for stored_name in photo_names:
+        (settings.photo_directory / stored_name).unlink(missing_ok=True)
+    return {"deleted": True}
+
+
 def _spawn_jar_values(update: SpawnJarUpdate) -> dict[str, object]:
     return {
         "name": update.name,
@@ -400,7 +457,7 @@ def _spawn_jar_values(update: SpawnJarUpdate) -> dict[str, object]:
 
 @app.get("/api/jars")
 def spawn_jars(status: str | None = Query(default="active")) -> dict[str, object]:
-    if status not in {"active", "spawned", "archived", "all", None}:
+    if status not in {"active", "spawned", "archived", "failed", "all", None}:
         raise HTTPException(status_code=400, detail="Invalid jar status")
     return {
         "jars": get_spawn_jars(
@@ -468,6 +525,36 @@ def lock_spawn_jar(jar_id: int, update: SpawnJarLockUpdate) -> dict[str, object]
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Spawn jar not found") from exc
     return {"jar": result}
+
+
+@app.post("/api/jars/{jar_id}/archive")
+def archive_current_spawn_jar(
+    jar_id: int, update: LifecycleArchiveRequest
+) -> dict[str, object]:
+    try:
+        result = archive_spawn_jar(
+            settings.database_path,
+            jar_id,
+            contaminated=update.contaminated,
+            occurred_on=update.occurred_on.isoformat(),
+            reason=update.reason,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Spawn jar not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"jar": result}
+
+
+@app.delete("/api/jars/{jar_id}")
+def remove_spawn_jar(jar_id: int) -> dict[str, bool]:
+    try:
+        photo_names = delete_spawn_jar(settings.database_path, jar_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Spawn jar not found") from exc
+    for stored_name in photo_names:
+        (settings.photo_directory / stored_name).unlink(missing_ok=True)
+    return {"deleted": True}
 
 
 @app.post("/api/jars/{jar_id}/spawn", status_code=201)

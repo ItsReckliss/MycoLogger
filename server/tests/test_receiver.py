@@ -8,18 +8,24 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from mycologger.database import (
+    archive_grow,
+    archive_spawn_jar,
     add_spawn_jar_photo,
     add_grow_photo,
     cancel_node_reservation,
     complete_node_provisioning,
     create_spawn_jar,
     create_spawn_jars,
+    delete_grow,
+    delete_spawn_jar,
     delete_grow_photo,
     get_current_grows,
+    get_archived_grows,
     get_counts,
     get_grow,
     get_node,
     get_nodes,
+    get_spawn_jar,
     get_spawn_jars,
     get_provisioning_status,
     initialize,
@@ -536,6 +542,86 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(detailed["photos"][0]["original_name"], "pins.jpg")
         removed = delete_grow_photo(self.database_path, tub_id, photo["photo_id"])
         self.assertIsNotNone(removed)
+
+    def test_grow_archive_classification_releases_node_and_preserves_history(self) -> None:
+        self.assertTrue(self.ingest(sensor_record(tx_sequence=1)))
+        assigned = update_node_settings(
+            self.database_path,
+            1,
+            name="Node 1",
+            tub_name="Failed tub",
+            location="",
+            notes="",
+            active=True,
+            report_interval_s=60,
+        )
+        self.assertTrue(self.ingest(sensor_record(tx_sequence=2, co2_ppm=900)))
+        tub_id = int(assigned["tub_id"])
+        archived = archive_grow(
+            self.database_path,
+            tub_id,
+            contaminated=True,
+            first_flush_harvested=False,
+            occurred_on="2026-08-21",
+            reason="Trich before pins",
+        )
+        self.assertEqual(archived["archive_category"], "failed_grow")
+        self.assertEqual(archived["history"][-1]["co2_ppm"], 900.0)
+        self.assertEqual(get_current_grows(self.database_path), [])
+        failed = get_archived_grows(
+            self.database_path, category="failed_grow"
+        )
+        self.assertEqual([grow["tub_id"] for grow in failed], [tub_id])
+        node = get_node(self.database_path, 1)
+        assert node is not None
+        self.assertIsNone(node["tub_id"])
+        self.assertEqual(delete_grow(self.database_path, tub_id), [])
+        self.assertIsNone(get_grow(self.database_path, tub_id))
+        self.assertEqual(get_counts(self.database_path)["measurements"], 2)
+
+    def test_jar_archive_failure_and_permanent_deletion(self) -> None:
+        common = dict(
+            grain_type="millet",
+            prep_tek="",
+            pressure_cooker_minutes=120,
+            pressure_psi=15,
+            dry_grain_grams_per_jar=300,
+            jar_count=1,
+            pressure_cooked_on="2026-08-12",
+            inoculated_on="2026-08-13",
+            culture="GT",
+            species="Psilocybe cubensis",
+            break_shake_dates=[],
+            notes="",
+        )
+        archived_jar = create_spawn_jar(
+            self.database_path, name="Clean extra", **common
+        )
+        failed_jar = create_spawn_jar(
+            self.database_path, name="Contaminated jar", **common
+        )
+        archived_jar = archive_spawn_jar(
+            self.database_path,
+            archived_jar["jar_id"],
+            contaminated=False,
+            occurred_on="2026-08-20",
+            reason="No longer needed",
+        )
+        failed_jar = archive_spawn_jar(
+            self.database_path,
+            failed_jar["jar_id"],
+            contaminated=True,
+            occurred_on="2026-08-21",
+            reason="Green growth",
+        )
+        self.assertEqual(archived_jar["archive_category"], "archived_jar")
+        self.assertEqual(failed_jar["archive_category"], "failed_jar")
+        self.assertEqual(len(get_spawn_jars(self.database_path, status="archived")), 1)
+        self.assertEqual(len(get_spawn_jars(self.database_path, status="failed")), 1)
+        self.assertEqual(delete_spawn_jar(
+            self.database_path, failed_jar["jar_id"]
+        ), [])
+        self.assertIsNone(get_spawn_jar(self.database_path, failed_jar["jar_id"]))
 
     def test_spawn_jar_rolls_into_locked_sensor_optional_tub(self) -> None:
         jar = create_spawn_jar(

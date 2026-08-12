@@ -80,9 +80,9 @@ Assigning a tub to a node creates its tile in Current Tubs. Tiles are arranged
 three across on desktop and show the strain (falling back to the tub name),
 permanent node ID, current readings, and hourly temperature, humidity, and CO2
 averages from the last three days. Graphs expose one-hour, one-day, three-day,
-seven-day, and one-month ranges. Each metric has a labeled, independently
-scaled axis with a useful minimum span; axis bounds can expand for new extremes
-but do not contract during routine refreshes. History begins with the current
+seven-day, and one-month ranges. Each metric occupies its own labeled lane with
+a dotted average guide and a useful minimum span; axis bounds can expand for new
+extremes but do not contract during routine refreshes. History begins with the current
 node-to-tub assignment so reusing a transmitter does not mix two grows.
 
 The grow detail dialog stores the tub name, species, strain, stage, spawn-to-bulk
@@ -118,6 +118,14 @@ than only by the page.
 Tubs created from jars can be left without a sensor and assigned later from the
 Nodes page. Their history and live readings remain empty until a node is
 assigned; the spawn record is still available immediately.
+
+Current tubs and jars have explicit archive, contamination, and permanent-delete
+actions. Archiving a grow releases its sensor assignment without changing old
+measurements. Finished grows and contaminated grows that produced a first flush
+go to Past Grows; contamination before the first flush goes to Failed Grows.
+Contaminated jars go to Failed Jars, while clean manually archived jars go to
+Archived Jars. Historical records keep their notes and photos and remain
+viewable in the Archive; permanent deletion is a separate confirmed operation.
 
 Photo files live in `MYCOLOGGER_PHOTO_DIRECTORY`; SQLite stores their metadata
 and environmental snapshot. On the Pi, keep this directory outside the Git

@@ -50,6 +50,11 @@ CREATE TABLE IF NOT EXISTS tubs (
     stage           TEXT NOT NULL DEFAULT 'colonizing',
     notes           TEXT NOT NULL DEFAULT '',
     active          INTEGER NOT NULL DEFAULT 1,
+    archive_category TEXT NOT NULL DEFAULT '',
+    lifecycle_reason TEXT NOT NULL DEFAULT '',
+    contaminated_on TEXT,
+    archived_utc    TEXT,
+    first_flush_harvested INTEGER NOT NULL DEFAULT 0,
     created_utc     TEXT NOT NULL,
     updated_utc     TEXT NOT NULL
 )
@@ -105,6 +110,10 @@ CREATE TABLE IF NOT EXISTS spawn_jars (
     species                   TEXT NOT NULL DEFAULT '',
     notes                     TEXT NOT NULL DEFAULT '',
     status                    TEXT NOT NULL DEFAULT 'active',
+    archive_category          TEXT NOT NULL DEFAULT '',
+    lifecycle_reason          TEXT NOT NULL DEFAULT '',
+    contaminated_on           TEXT,
+    archived_utc              TEXT,
     spawned_to_tub_id         INTEGER REFERENCES tubs(tub_id),
     spawned_utc               TEXT,
     locked                    INTEGER NOT NULL DEFAULT 0,
@@ -307,6 +316,11 @@ def _migrate_tubs(connection: sqlite3.Connection) -> None:
         "completed_on": "TEXT",
         "stage": "TEXT NOT NULL DEFAULT 'colonizing'",
         "spawn_ratio": "TEXT NOT NULL DEFAULT ''",
+        "archive_category": "TEXT NOT NULL DEFAULT ''",
+        "lifecycle_reason": "TEXT NOT NULL DEFAULT ''",
+        "contaminated_on": "TEXT",
+        "archived_utc": "TEXT",
+        "first_flush_harvested": "INTEGER NOT NULL DEFAULT 0",
     }
     for name, declaration in additions.items():
         if name not in columns:
@@ -315,10 +329,18 @@ def _migrate_tubs(connection: sqlite3.Connection) -> None:
 
 def _migrate_spawn_jars(connection: sqlite3.Connection) -> None:
     columns = _column_names(connection, "spawn_jars")
-    if columns and "species" not in columns:
-        connection.execute(
-            "ALTER TABLE spawn_jars ADD COLUMN species TEXT NOT NULL DEFAULT ''"
-        )
+    additions = {
+        "species": "TEXT NOT NULL DEFAULT ''",
+        "archive_category": "TEXT NOT NULL DEFAULT ''",
+        "lifecycle_reason": "TEXT NOT NULL DEFAULT ''",
+        "contaminated_on": "TEXT",
+        "archived_utc": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            connection.execute(
+                f"ALTER TABLE spawn_jars ADD COLUMN {name} {declaration}"
+            )
 
 
 def _migrate_photos(connection: sqlite3.Connection) -> None:
@@ -348,12 +370,26 @@ def initialize(database_path: Path) -> None:
         _migrate_nodes(connection)
         connection.execute(TUBS_SCHEMA)
         _migrate_tubs(connection)
+        connection.execute(
+            """
+            UPDATE tubs SET archive_category = 'past_grow',
+                archived_utc = COALESCE(archived_utc, updated_utc)
+            WHERE active = 0 AND archive_category = ''
+            """
+        )
         connection.execute(ASSIGNMENTS_SCHEMA)
         connection.execute(PIN_DATES_SCHEMA)
         connection.execute(PHOTOS_SCHEMA)
         _migrate_photos(connection)
         connection.execute(SPAWN_JARS_SCHEMA)
         _migrate_spawn_jars(connection)
+        connection.execute(
+            """
+            UPDATE spawn_jars SET archive_category = 'archived_jar',
+                archived_utc = COALESCE(archived_utc, updated_utc)
+            WHERE status = 'archived' AND archive_category = ''
+            """
+        )
         connection.execute(SPAWN_JAR_BREAK_SHAKES_SCHEMA)
         connection.execute(SPAWN_JAR_PHOTOS_SCHEMA)
         connection.execute(PROVISIONED_TRANSMITTERS_SCHEMA)
@@ -812,7 +848,8 @@ def get_tubs(database_path: Path) -> list[dict[str, Any]]:
             FROM tubs AS t
             LEFT JOIN node_tub_assignments AS a
                 ON a.tub_id = t.tub_id AND a.unassigned_utc IS NULL
-            GROUP BY t.tub_id ORDER BY t.active DESC, t.name COLLATE NOCASE
+            WHERE t.active = 1 AND t.archive_category = ''
+            GROUP BY t.tub_id ORDER BY t.name COLLATE NOCASE
             """
         ).fetchall()
     tubs = [dict(row) for row in rows]
@@ -914,7 +951,8 @@ GROW_QUERY = """
     SELECT
         t.tub_id, t.name, t.species, t.strain, t.started_on,
         t.spawn_to_bulk_on, t.completed_on, t.stage, t.spawn_ratio,
-        t.notes, t.active,
+        t.notes, t.active, t.archive_category, t.lifecycle_reason,
+        t.contaminated_on, t.archived_utc, t.first_flush_harvested,
         t.created_utc, t.updated_utc,
         a.assignment_id, a.assigned_utc,
         n.node_id, n.name AS node_name, n.location, n.last_seen_utc,
@@ -924,12 +962,15 @@ GROW_QUERY = """
         (SELECT COUNT(*) FROM grow_photos p WHERE p.tub_id = t.tub_id)
             AS photo_count
     FROM tubs AS t
-    LEFT JOIN node_tub_assignments AS a
-        ON a.tub_id = t.tub_id AND a.unassigned_utc IS NULL
+    LEFT JOIN node_tub_assignments AS a ON a.assignment_id = (
+        SELECT assignment_id FROM node_tub_assignments
+        WHERE tub_id = t.tub_id ORDER BY assigned_utc DESC, assignment_id DESC
+        LIMIT 1
+    )
     LEFT JOIN nodes AS n ON n.node_id = a.node_id
     LEFT JOIN measurements AS m ON m.id = (
         SELECT id FROM measurements
-        WHERE node_id = n.node_id
+        WHERE tub_id = t.tub_id
         ORDER BY received_utc DESC, id DESC LIMIT 1
     )
 """
@@ -939,6 +980,7 @@ def _grow_history(
     connection: sqlite3.Connection,
     *,
     node_id: int,
+    tub_id: int,
     assigned_utc: str,
     hours: int,
 ) -> list[dict[str, Any]]:
@@ -972,11 +1014,14 @@ def _grow_history(
             ROUND(AVG(temperature_c), 2) AS temperature_c,
             ROUND(AVG(humidity_percent), 2) AS humidity_percent
         FROM measurements
-        WHERE node_id = ? AND received_utc >= ? AND sensor_valid = 1
+        WHERE node_id = ? AND tub_id = ? AND received_utc >= ? AND sensor_valid = 1
         GROUP BY (CAST(strftime('%s', received_utc) AS INTEGER) / ?)
         ORDER BY recorded_utc
         """,
-        (bucket_seconds, bucket_seconds, node_id, lower_bound.isoformat(), bucket_seconds),
+        (
+            bucket_seconds, bucket_seconds, node_id, tub_id,
+            lower_bound.isoformat(), bucket_seconds,
+        ),
     ).fetchall()
     return [dict(row) for row in rows if row["recorded_utc"] is not None]
 
@@ -990,6 +1035,7 @@ def _format_grow(
 ) -> dict[str, Any]:
     grow = dict(row)
     grow["active"] = bool(grow["active"])
+    grow["first_flush_harvested"] = bool(grow["first_flush_harvested"])
     grow["sensor_valid"] = bool(grow["sensor_valid"])
     grow["title"] = grow["strain"] or grow["name"]
     grow["rssi_dbm"] = (
@@ -1009,6 +1055,7 @@ def _format_grow(
         _grow_history(
             connection,
             node_id=int(grow["node_id"]),
+            tub_id=int(grow["tub_id"]),
             assigned_utc=str(grow["assigned_utc"]),
             hours=hours,
         )
@@ -1067,7 +1114,25 @@ def _format_grow(
 def get_current_grows(database_path: Path, *, hours: int = 72) -> list[dict[str, Any]]:
     with connect(database_path) as connection:
         rows = connection.execute(
-            GROW_QUERY + " WHERE t.active = 1 ORDER BY t.updated_utc DESC, t.tub_id"
+            GROW_QUERY + " WHERE t.active = 1 AND t.archive_category = '' "
+            "ORDER BY t.updated_utc DESC, t.tub_id"
+        ).fetchall()
+        return [
+            _format_grow(connection, row, hours=hours, include_details=False)
+            for row in rows
+        ]
+
+
+def get_archived_grows(
+    database_path: Path, *, category: str, hours: int = 72
+) -> list[dict[str, Any]]:
+    if category not in {"past_grow", "failed_grow"}:
+        raise ValueError("Invalid grow archive category")
+    with connect(database_path) as connection:
+        rows = connection.execute(
+            GROW_QUERY + " WHERE t.archive_category = ? "
+            "ORDER BY t.archived_utc DESC, t.tub_id DESC",
+            (category,),
         ).fetchall()
         return [
             _format_grow(connection, row, hours=hours, include_details=False)
@@ -1142,6 +1207,97 @@ def update_grow(
     if updated is None:
         raise KeyError(tub_id)
     return updated
+
+
+def archive_grow(
+    database_path: Path,
+    tub_id: int,
+    *,
+    contaminated: bool,
+    first_flush_harvested: bool,
+    occurred_on: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Finish or fail a tub while preserving its complete historical record."""
+    now = _utc_now()
+    category = (
+        "failed_grow"
+        if contaminated and not first_flush_harvested
+        else "past_grow"
+    )
+    with connect(database_path) as connection:
+        existing = connection.execute(
+            "SELECT tub_id, archive_category FROM tubs WHERE tub_id = ?", (tub_id,)
+        ).fetchone()
+        if existing is None:
+            raise KeyError(tub_id)
+        if str(existing["archive_category"]):
+            raise ValueError("Grow is already archived")
+        connection.execute(
+            """
+            UPDATE tubs SET active = 0, stage = 'complete',
+                completed_on = COALESCE(completed_on, ?), archive_category = ?,
+                lifecycle_reason = ?, contaminated_on = ?, archived_utc = ?,
+                first_flush_harvested = ?, updated_utc = ?
+            WHERE tub_id = ?
+            """,
+            (
+                occurred_on,
+                category,
+                reason.strip(),
+                occurred_on if contaminated else None,
+                now,
+                int(first_flush_harvested),
+                now,
+                tub_id,
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE node_tub_assignments SET unassigned_utc = ?
+            WHERE tub_id = ? AND unassigned_utc IS NULL
+            """,
+            (now, tub_id),
+        )
+    result = get_grow(database_path, tub_id)
+    assert result is not None
+    return result
+
+
+def delete_grow(database_path: Path, tub_id: int) -> list[str]:
+    """Permanently delete a tub while retaining measurements and source jars."""
+    now = _utc_now()
+    with connect(database_path) as connection:
+        exists = connection.execute(
+            "SELECT tub_id FROM tubs WHERE tub_id = ?", (tub_id,)
+        ).fetchone()
+        if exists is None:
+            raise KeyError(tub_id)
+        photo_names = [
+            str(row["stored_name"])
+            for row in connection.execute(
+                "SELECT stored_name FROM grow_photos WHERE tub_id = ?", (tub_id,)
+            ).fetchall()
+        ]
+        connection.execute(
+            "UPDATE measurements SET tub_id = NULL WHERE tub_id = ?", (tub_id,)
+        )
+        connection.execute(
+            "DELETE FROM node_tub_assignments WHERE tub_id = ?", (tub_id,)
+        )
+        connection.execute(
+            """
+            UPDATE spawn_jars SET spawned_to_tub_id = NULL,
+                status = 'archived', archive_category = 'archived_jar',
+                lifecycle_reason = CASE WHEN lifecycle_reason = ''
+                    THEN 'Source tub was deleted' ELSE lifecycle_reason END,
+                archived_utc = COALESCE(archived_utc, ?), updated_utc = ?
+            WHERE spawned_to_tub_id = ?
+            """,
+            (now, now, tub_id),
+        )
+        connection.execute("DELETE FROM tubs WHERE tub_id = ?", (tub_id,))
+    return photo_names
 
 
 def add_grow_photo(
@@ -1398,6 +1554,64 @@ def get_spawn_jars(
 def get_spawn_jar(database_path: Path, jar_id: int) -> dict[str, Any] | None:
     with connect(database_path) as connection:
         return _get_spawn_jar_with_connection(connection, jar_id)
+
+
+def archive_spawn_jar(
+    database_path: Path,
+    jar_id: int,
+    *,
+    contaminated: bool,
+    occurred_on: str,
+    reason: str,
+) -> dict[str, Any]:
+    now = _utc_now()
+    status = "failed" if contaminated else "archived"
+    category = "failed_jar" if contaminated else "archived_jar"
+    with connect(database_path) as connection:
+        existing = connection.execute(
+            "SELECT status FROM spawn_jars WHERE jar_id = ?", (jar_id,)
+        ).fetchone()
+        if existing is None:
+            raise KeyError(jar_id)
+        if str(existing["status"]) != "active":
+            raise ValueError("Only a current jar can be archived")
+        connection.execute(
+            """
+            UPDATE spawn_jars SET status = ?, archive_category = ?,
+                lifecycle_reason = ?, contaminated_on = ?, archived_utc = ?,
+                locked = 1, updated_utc = ? WHERE jar_id = ?
+            """,
+            (
+                status,
+                category,
+                reason.strip(),
+                occurred_on if contaminated else None,
+                now,
+                now,
+                jar_id,
+            ),
+        )
+    result = get_spawn_jar(database_path, jar_id)
+    assert result is not None
+    return result
+
+
+def delete_spawn_jar(database_path: Path, jar_id: int) -> list[str]:
+    with connect(database_path) as connection:
+        exists = connection.execute(
+            "SELECT jar_id FROM spawn_jars WHERE jar_id = ?", (jar_id,)
+        ).fetchone()
+        if exists is None:
+            raise KeyError(jar_id)
+        photo_names = [
+            str(row["stored_name"])
+            for row in connection.execute(
+                "SELECT stored_name FROM spawn_jar_photos WHERE jar_id = ?",
+                (jar_id,),
+            ).fetchall()
+        ]
+        connection.execute("DELETE FROM spawn_jars WHERE jar_id = ?", (jar_id,))
+    return photo_names
 
 
 def create_spawn_jar(
