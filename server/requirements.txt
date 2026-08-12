@@ -1,0 +1,4 @@
+# Keep this list reproducible across Windows development and ARM64 Linux.
+fastapi==0.141.1
+pyserial==3.5
+uvicorn==0.52.1

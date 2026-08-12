@@ -1,0 +1,31 @@
+# Codex/CubeIDE temporary workspaces
+.codex-headless-workspace*/
+
+# STM32CubeIDE generated build products
+**/Debug/
+**/Release/
+**/.settings/language.settings.xml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Runtime configuration and persistent data
+.env
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+logs/
+
+# Editor/OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
