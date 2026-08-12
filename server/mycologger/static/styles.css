@@ -202,20 +202,24 @@ textarea:focus { border-color: var(--accent); }
 .stage-badge { padding: 3px 6px; color: #bed1c2; border: 1px solid #496b53; border-radius: 2px; background: #10251b; font-size: 8px; text-transform: uppercase; letter-spacing: .06em; }
 .stage-badge.fruiting, .stage-badge.harvesting { color: #d6e8b0; border-color: #63804c; background: #21331c; }
 .stage-badge.complete, .stage-badge.paused { color: #b2beb4; border-color: #4c5b50; background: #202721; }
-.grow-chart { position: relative; height: 125px; margin: 0 13px; overflow: hidden; border: 1px solid #2e513d; border-radius: 3px; background: #0d1b15; }
+.grow-chart { position: relative; height: 165px; margin: 0 13px; overflow: hidden; border: 1px solid #2e513d; border-radius: 3px; background: #0d1b15; }
 .grow-range-selector { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 13px 9px; }
 .grow-range-label { margin-right: 3px; color: #a8b9ab; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .grow-range-button { min-width: 38px; padding: 6px 8px; color: #aebdb1; border: 1px solid #3c614a; border-radius: 3px; background: #102219; cursor: pointer; font: inherit; font-size: 10px; font-weight: 600; }
 .grow-range-button:hover { color: var(--text); border-color: #52735b; }
 .grow-range-button.active { color: #fffbea; border-color: #89a96e; background: #34512a; box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
 .grow-chart svg { display: block; width: 100%; height: 100%; }
-.chart-scale-key { position: absolute; top: 5px; right: 5px; display: grid; gap: 2px; padding: 4px 5px; border: 1px solid rgba(65,94,73,.75); border-radius: 2px; background: rgba(7,17,12,.82); pointer-events: none; }
-.chart-scale-key span { font-size: 7px; line-height: 1.2; white-space: nowrap; }
+.chart-scale-key { position: absolute; inset: 0; pointer-events: none; }
+.chart-scale-key span { position: absolute; right: 5px; padding: 2px 4px; border-radius: 2px; background: rgba(7,17,12,.76); font-size: 7px; line-height: 1.2; white-space: nowrap; }
 .chart-scale-key .temperature { color: #e0aa68; }
 .chart-scale-key .humidity { color: #77b9d1; }
 .chart-scale-key .co2 { color: #92c778; }
 .chart-time-scale { position: absolute; right: 6px; bottom: 3px; left: 6px; display: flex; justify-content: space-between; color: #718779; font-size: 7px; pointer-events: none; text-shadow: 0 1px 2px #07110c; }
-.grow-chart .grid-line { stroke: #253c2f; stroke-width: 1; }
+.grow-chart .chart-band-separator { stroke: #294235; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.grow-chart .chart-average-line { stroke-width: 1; stroke-dasharray: 5 5; opacity: .7; vector-effect: non-scaling-stroke; }
+.grow-chart .temperature-average { stroke: #e0aa68; }
+.grow-chart .humidity-average { stroke: #77b9d1; }
+.grow-chart .co2-average { stroke: #92c778; }
 .grow-chart .temperature-line { fill: none; stroke: #e0aa68; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .grow-chart .humidity-line { fill: none; stroke: #77b9d1; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .grow-chart .co2-line { fill: none; stroke: #92c778; stroke-width: 2; vector-effect: non-scaling-stroke; }
@@ -225,6 +229,8 @@ textarea:focus { border-color: var(--accent); }
 .chart-legend .temperature { color: #e0aa68; }
 .chart-legend .humidity { color: #77b9d1; }
 .chart-legend .co2 { color: #92c778; }
+.chart-legend .average-guide { margin-left: auto; color: #829489; }
+.chart-legend .average-guide::before { height: 0; border-top: 1px dashed currentColor; background: none; }
 .grow-card-readings { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 11px; border-top: 1px solid #2f503d; background: #2f503d; }
 .grow-card-reading { min-width: 0; padding: 10px 8px; background: #153023; text-align: center; }
 .grow-card-reading strong, .grow-card-reading span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -241,9 +247,8 @@ textarea:focus { border-color: var(--accent); }
 .grow-reading-strip strong, .grow-reading-strip span { display: block; }
 .grow-reading-strip strong { font-size: 15px; }
 .grow-reading-strip span { margin-top: 2px; color: var(--muted); font-size: 8px; text-transform: uppercase; }
-.grow-chart.large { height: 220px; margin: 0; }
-.grow-chart.large .chart-scale-key { top: 8px; right: 8px; gap: 4px; padding: 6px 7px; }
-.grow-chart.large .chart-scale-key span { font-size: 9px; }
+.grow-chart.large { height: 270px; margin: 0; }
+.grow-chart.large .chart-scale-key span { right: 8px; padding: 3px 5px; font-size: 9px; }
 .grow-chart.large .chart-time-scale { right: 9px; bottom: 5px; left: 9px; font-size: 9px; }
 .grow-reading-section .chart-legend { padding-left: 0; }
 .section-help { color: var(--muted); font-size: 9px; }

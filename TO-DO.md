@@ -183,6 +183,7 @@ Maintenance rules:
 - [x] ~~Receiver exposes packets through cross-platform USB CDC/ACM serial.~~
 - [x] ~~Receiver service automatically discovers, reconnects, and stores readings.~~
 - [x] ~~Web dashboard shows nodes, tubs, jars, graphs, notes, and photos with captured conditions.~~
+- [x] ~~Separate tub graph metrics into readable lanes with dotted average guides.~~
 - [x] ~~Report interval can be changed through the receiver and acknowledged by the transmitter.~~
 - [x] ~~Universal firmware and the ST-LINK provisioner assign permanent node IDs using MCU UIDs and server reservations.~~
 - [x] ~~Flash utility preserves known UID assignments, supports explicit safe renumbering, and verifies the reserved configuration.~~

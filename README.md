@@ -222,8 +222,9 @@ Implemented dashboard/data features include:
 
 - live node readings, RSSI/SNR, battery field, firmware version, and config state;
 - configurable report interval delivered through the receiver;
-- current tubs with fixed-scale graphs and selectable 1 hour, 1 day, 3 day,
-  7 day, and 1 month ranges;
+- current tubs with stable-scale, vertically separated temperature, humidity,
+  and CO2 graph lanes, dotted window-average guides, and selectable 1 hour,
+  1 day, 3 day, 7 day, and 1 month ranges;
 - current spawn jars, preparation/inoculation/break-and-shake records, and
   culture/species-aware spawning into tubs;
 - multiple queued photo uploads, EXIF capture times, and environmental conditions

@@ -273,17 +273,22 @@ function formatScaleValue(value, metric) {
   return Math.round(value).toLocaleString();
 }
 
-function chartPath(history, key, scale, width, height, padding) {
+function chartY(value, scale, bandTop, bandHeight, bandPadding) {
+  const usableHeight = Math.max(bandHeight - (bandPadding * 2), 1);
+  return bandTop + bandPadding
+    + ((scale.maximum - value) / (scale.maximum - scale.minimum) * usableHeight);
+}
+
+function chartPath(history, key, scale, width, bandTop, bandHeight, xPadding, bandPadding) {
   const points = history
     .map((item, index) => ({ index, value: Number(item[key]) }))
     .filter((item) => Number.isFinite(item.value));
   if (points.length === 0) return "";
-  const usableWidth = width - (padding * 2);
-  const usableHeight = height - (padding * 2);
+  const usableWidth = width - (xPadding * 2);
   const denominator = Math.max(history.length - 1, 1);
   return points.map((point, pointIndex) => {
-    const x = padding + ((point.index / denominator) * usableWidth);
-    const y = padding + ((scale.maximum - point.value) / (scale.maximum - scale.minimum) * usableHeight);
+    const x = xPadding + ((point.index / denominator) * usableWidth);
+    const y = chartY(point.value, scale, bandTop, bandHeight, bandPadding);
     return `${pointIndex === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
 }
@@ -306,19 +311,62 @@ function renderChart(container, history, rangeTitle = "selected time range", cac
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", `Temperature, humidity, and CO2 history for ${rangeTitle.toLowerCase()}`);
   const scales = stableChartScales(history, cacheKey);
-  [0.25, 0.5, 0.75].forEach((fraction) => {
-    const line = document.createElementNS(namespace, "line");
-    line.setAttribute("x1", "0");
-    line.setAttribute("x2", String(width));
-    line.setAttribute("y1", String(height * fraction));
-    line.setAttribute("y2", String(height * fraction));
-    line.setAttribute("class", "grid-line");
-    svg.append(line);
-  });
-  CHART_METRICS.forEach((metric) => {
+  const activeMetrics = CHART_METRICS.filter((metric) => scales[metric.key]);
+  const topPadding = 8;
+  const bottomPadding = 18;
+  const xPadding = 9;
+  const bandPadding = 5;
+  const bandGap = 8;
+  const bandHeight = (
+    height - topPadding - bottomPadding
+      - (bandGap * Math.max(activeMetrics.length - 1, 0))
+  ) / Math.max(activeMetrics.length, 1);
+  const averages = {};
+  const bandTops = {};
+
+  activeMetrics.forEach((metric, metricIndex) => {
     const scale = scales[metric.key];
-    if (!scale) return;
-    const pathData = chartPath(history, metric.key, scale, width, height, 9);
+    const values = history
+      .map((item) => Number(item[metric.key]))
+      .filter(Number.isFinite);
+    const average = values.reduce((total, value) => total + value, 0) / values.length;
+    const bandTop = topPadding + (metricIndex * (bandHeight + bandGap));
+    averages[metric.key] = average;
+    bandTops[metric.key] = bandTop;
+
+    if (metricIndex > 0) {
+      const separator = document.createElementNS(namespace, "line");
+      const separatorY = bandTop - (bandGap / 2);
+      separator.setAttribute("x1", "0");
+      separator.setAttribute("x2", String(width));
+      separator.setAttribute("y1", String(separatorY));
+      separator.setAttribute("y2", String(separatorY));
+      separator.setAttribute("class", "chart-band-separator");
+      svg.append(separator);
+    }
+
+    const averageLine = document.createElementNS(namespace, "line");
+    const averageY = chartY(average, scale, bandTop, bandHeight, bandPadding);
+    averageLine.setAttribute("x1", String(xPadding));
+    averageLine.setAttribute("x2", String(width - xPadding));
+    averageLine.setAttribute("y1", String(averageY));
+    averageLine.setAttribute("y2", String(averageY));
+    averageLine.setAttribute(
+      "class",
+      `chart-average-line ${metric.className.replace("-line", "-average")}`,
+    );
+    svg.append(averageLine);
+
+    const pathData = chartPath(
+      history,
+      metric.key,
+      scale,
+      width,
+      bandTop,
+      bandHeight,
+      xPadding,
+      bandPadding,
+    );
     if (!pathData) return;
     const path = document.createElementNS(namespace, "path");
     path.setAttribute("d", pathData);
@@ -329,13 +377,12 @@ function renderChart(container, history, rangeTitle = "selected time range", cac
 
   const scaleKey = document.createElement("div");
   scaleKey.className = "chart-scale-key";
-  CHART_METRICS.forEach((metric) => {
+  activeMetrics.forEach((metric) => {
     const scale = scales[metric.key];
-    if (!scale) return;
     const row = document.createElement("span");
     row.className = metric.className.replace("-line", "");
-    const midpoint = (scale.minimum + scale.maximum) / 2;
-    row.textContent = `${metric.name} ${formatScaleValue(scale.minimum, metric)} / ${formatScaleValue(midpoint, metric)} / ${formatScaleValue(scale.maximum, metric)}${metric.unit}`;
+    row.style.top = `${((bandTops[metric.key] + bandPadding) / height) * 100}%`;
+    row.textContent = `${metric.name} ${formatScaleValue(scale.minimum, metric)} / avg ${formatScaleValue(averages[metric.key], metric)} / ${formatScaleValue(scale.maximum, metric)}${metric.unit}`;
     scaleKey.append(row);
   });
   container.append(scaleKey);
@@ -415,7 +462,7 @@ function makeGrowCard(grow) {
   renderChart(chart, grow.history, range.title, `${grow.tub_id}:${activeHours}`);
   const legend = document.createElement("div");
   legend.className = "chart-legend";
-  legend.innerHTML = '<span class="temperature">Temp</span><span class="humidity">Humidity</span><span class="co2">CO₂</span>';
+  legend.innerHTML = '<span class="temperature">Temp</span><span class="humidity">Humidity</span><span class="co2">CO₂</span><span class="average-guide">Dotted = average</span>';
 
   const readings = document.createElement("div");
   readings.className = "grow-card-readings";
