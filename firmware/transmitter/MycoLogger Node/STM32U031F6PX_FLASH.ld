@@ -45,7 +45,8 @@ _Min_Stack_Size = 0x400; /* required amount of stack */
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 12K
-  FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 32K
+  /* Reserve the final 2 KB page at 0x08007800 for persistent node config. */
+  FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 30K
 }
 
 /* Sections */

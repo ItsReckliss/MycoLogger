@@ -24,18 +24,13 @@
 
 #include "sx1262_tx.h"
 #include "scd41.h"
+#include "node_config.h"
+#include "battery_adc.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
-typedef struct
-{
-  uint32_t node_id;
-  uint32_t report_interval_ms;
-  uint32_t downlink_window_ms;
-} MycoNodeConfig;
 
 /* USER CODE END PTD */
 
@@ -46,13 +41,28 @@ typedef struct
 #define DEFAULT_REPORT_INTERVAL_MS 60000U
 #define DEFAULT_DOWNLINK_WINDOW_MS  1500U
 #define BUTTON_DEBOUNCE_TIME_MS       30U
-#define HEARTBEAT_ON_TIME_MS         500U
+#define NODE_ID_BLINK_ON_TIME_MS      90U
+#define NODE_ID_BLINK_OFF_TIME_MS    110U
+#define CONFIG_BLINK_COUNT              6U
+#define CONFIG_BLINK_ON_TIME_MS        45U
+#define CONFIG_BLINK_OFF_TIME_MS       55U
+#define NETWORK_CHECK_MAX_ATTEMPTS       3U
+#define NETWORK_FAIL_BLINK_COUNT         2U
+#define NETWORK_FAIL_BLINK_TIME_MS     250U
 #define RADIO_RETRY_INTERVAL_MS     5000U
 #define RADIO_ERROR_PATTERN_MS      2000U
-#define SENSOR_PACKET_SIZE            26U
+#define SENSOR_PACKET_SIZE            36U
+#define CONFIG_PACKET_SIZE            22U
+#define CONFIG_ACK_PACKET_SIZE        23U
 #define TEST_PACKET_VERSION            1U
 #define TEST_PACKET_SENSOR_READING     2U
-#define DEFAULT_NODE_ID                1U
+#define TEST_PACKET_LINK_CHECK         3U
+#define TEST_PACKET_SET_CONFIG      0x80U
+#define TEST_PACKET_CONFIG_ACK      0x81U
+#define TEST_PACKET_LINK_ACK        0x82U
+#define LINK_ACK_PACKET_SIZE           14U
+#define LINK_CHECK_PACKET_SIZE         14U
+#define DEFAULT_NODE_ID                0U
 
 /* USER CODE END PD */
 
@@ -103,11 +113,22 @@ static void WriteUint16BigEndian(uint8_t *destination, uint16_t value)
   destination[1] = (uint8_t)value;
 }
 
+static uint32_t ReadUint32BigEndian(const uint8_t *source)
+{
+  return ((uint32_t)source[0] << 24) |
+         ((uint32_t)source[1] << 16) |
+         ((uint32_t)source[2] << 8) |
+         (uint32_t)source[3];
+}
+
 static void BuildSensorPacket(uint8_t *packet,
                               const MycoNodeConfig *config,
                               uint32_t sequence,
                               bool buttonPressed,
+                              bool networkCheckRequested,
                               bool sensorValid,
+                              bool batteryValid,
+                              uint16_t batteryMillivolts,
                               const SCD41Measurement *measurement,
                               SCD41Error sensorError)
 {
@@ -121,7 +142,9 @@ static void BuildSensorPacket(uint8_t *packet,
   WriteUint32BigEndian(&packet[10], sequence);
   WriteUint32BigEndian(&packet[14], HAL_GetTick() / 1000U);
   packet[18] = (buttonPressed ? 0x01U : 0x00U) |
-               (sensorValid ? 0x02U : 0x00U);
+               (sensorValid ? 0x02U : 0x00U) |
+               (batteryValid ? 0x04U : 0x00U) |
+               (networkCheckRequested ? 0x08U : 0x00U);
   WriteUint16BigEndian(&packet[19],
                        sensorValid ? measurement->co2_ppm : 0U);
   WriteUint16BigEndian(
@@ -131,6 +154,93 @@ static void BuildSensorPacket(uint8_t *packet,
       &packet[23],
       sensorValid ? measurement->humidity_centi_percent : 0U);
   packet[25] = (uint8_t)sensorError;
+  WriteUint32BigEndian(&packet[26], config->revision);
+  WriteUint32BigEndian(&packet[30], config->report_interval_ms / 1000U);
+  WriteUint16BigEndian(&packet[34],
+                       batteryValid ? batteryMillivolts : 0U);
+}
+
+static bool ApplyConfigPacket(const SX1262RxPacket *packet,
+                              MycoNodeConfig *config,
+                              uint32_t *transactionId,
+                              uint8_t *status)
+{
+  uint32_t targetNodeId;
+  uint32_t revision;
+  uint32_t reportIntervalS;
+
+  if ((packet == NULL) || (config == NULL) ||
+      (transactionId == NULL) || (status == NULL) ||
+      (packet->length != CONFIG_PACKET_SIZE) ||
+      (packet->payload[0] != 'M') ||
+      (packet->payload[1] != 'Y') ||
+      (packet->payload[2] != 'C') ||
+      (packet->payload[3] != 'O') ||
+      (packet->payload[4] != TEST_PACKET_VERSION) ||
+      (packet->payload[5] != TEST_PACKET_SET_CONFIG))
+  {
+    return false;
+  }
+
+  targetNodeId = ReadUint32BigEndian(&packet->payload[6]);
+  *transactionId = ReadUint32BigEndian(&packet->payload[10]);
+  revision = ReadUint32BigEndian(&packet->payload[14]);
+  reportIntervalS = ReadUint32BigEndian(&packet->payload[18]);
+
+  return NodeConfig_Apply(config,
+                          targetNodeId,
+                          *transactionId,
+                          revision,
+                          reportIntervalS,
+                          status);
+}
+
+static void BuildConfigAckPacket(uint8_t *packet,
+                                 const MycoNodeConfig *config,
+                                 uint32_t transactionId,
+                                 uint8_t status)
+{
+  packet[0] = 'M';
+  packet[1] = 'Y';
+  packet[2] = 'C';
+  packet[3] = 'O';
+  packet[4] = TEST_PACKET_VERSION;
+  packet[5] = TEST_PACKET_CONFIG_ACK;
+  WriteUint32BigEndian(&packet[6], config->node_id);
+  WriteUint32BigEndian(&packet[10], transactionId);
+  WriteUint32BigEndian(&packet[14], config->revision);
+  packet[18] = status;
+  WriteUint32BigEndian(&packet[19], config->report_interval_ms / 1000U);
+}
+
+static bool IsLinkAckPacket(const SX1262RxPacket *packet,
+                            const MycoNodeConfig *config,
+                            uint32_t expectedSequence)
+{
+  return (packet != NULL) && (config != NULL) &&
+         (packet->length == LINK_ACK_PACKET_SIZE) &&
+         (packet->payload[0] == 'M') &&
+         (packet->payload[1] == 'Y') &&
+         (packet->payload[2] == 'C') &&
+         (packet->payload[3] == 'O') &&
+         (packet->payload[4] == TEST_PACKET_VERSION) &&
+         (packet->payload[5] == TEST_PACKET_LINK_ACK) &&
+         (ReadUint32BigEndian(&packet->payload[6]) == config->node_id) &&
+         (ReadUint32BigEndian(&packet->payload[10]) == expectedSequence);
+}
+
+static void BuildLinkCheckPacket(uint8_t *packet,
+                                 const MycoNodeConfig *config,
+                                 uint32_t checkSequence)
+{
+  packet[0] = 'M';
+  packet[1] = 'Y';
+  packet[2] = 'C';
+  packet[3] = 'O';
+  packet[4] = TEST_PACKET_VERSION;
+  packet[5] = TEST_PACKET_LINK_CHECK;
+  WriteUint32BigEndian(&packet[6], config->node_id);
+  WriteUint32BigEndian(&packet[10], checkSequence);
 }
 
 /* USER CODE END 0 */
@@ -169,16 +279,36 @@ int main(void)
   BlinkDebugLedAtBoot();
   SX1262_TX_BusInit();
   SCD41_BusInit();
+  BatteryADC_InitPin();
 
-  /*
-   * Keep changeable settings together so a future authenticated downlink can
-   * validate and apply a complete configuration update atomically.
-   */
-  MycoNodeConfig nodeConfig = {
-      .node_id = DEFAULT_NODE_ID,
-      .report_interval_ms = DEFAULT_REPORT_INTERVAL_MS,
-      .downlink_window_ms = DEFAULT_DOWNLINK_WINDOW_MS
-  };
+  MycoNodeConfig nodeConfig;
+  NodeConfig_Load(&nodeConfig,
+                  DEFAULT_NODE_ID,
+                  DEFAULT_REPORT_INTERVAL_MS,
+                  DEFAULT_DOWNLINK_WINDOW_MS);
+  bool provisioningConfirmation =
+      NodeConfig_ConsumeProvisioningMarker(&nodeConfig);
+
+  /* Node zero is deliberately silent until an ST-LINK provisioner writes a
+     valid identity into the reserved configuration flash page. */
+  if (nodeConfig.node_id == 0U)
+  {
+    while (1)
+    {
+      for (uint32_t flash = 0U; flash < 4U; flash++)
+      {
+        HAL_GPIO_WritePin(Debug_LED_GPIO_Port,
+                          Debug_LED_Pin,
+                          GPIO_PIN_SET);
+        HAL_Delay(90U);
+        HAL_GPIO_WritePin(Debug_LED_GPIO_Port,
+                          Debug_LED_Pin,
+                          GPIO_PIN_RESET);
+        HAL_Delay(110U);
+      }
+      HAL_Delay(1800U);
+    }
+  }
 
   uint8_t radioStatus = 0U;
   bool radioReady =
@@ -186,13 +316,33 @@ int main(void)
   bool sensorCycleFailed = false;
   bool sensorMeasurementValid = false;
   bool sensorPacketPending = false;
+  bool sensorTransmitActive = false;
+  bool downlinkReceiveActive = false;
+  bool configAckTransmitActive = false;
+  bool networkLinkPacketPending = radioReady;
+  bool networkLinkTransmitActive = false;
+  bool networkConfirmationPending = true;
+  bool networkStartupCheckActive = radioReady;
+  uint8_t networkCheckAttempts = 0U;
+  uint32_t networkCheckSequence = 0U;
   SCD41Measurement sensorMeasurement = {0};
   uint32_t lastRadioInitTick = HAL_GetTick();
   uint32_t lastSensorCycleTick = HAL_GetTick();
-  uint32_t ledFlashStartTick = 0U;
-  bool ledFlashActive = false;
+  uint32_t ledSequenceTick = HAL_GetTick();
+  uint32_t ledSequenceBlinksRemaining =
+      provisioningConfirmation ? CONFIG_BLINK_COUNT : 0U;
+  uint32_t ledSequenceOnTimeMs = CONFIG_BLINK_ON_TIME_MS;
+  uint32_t ledSequenceOffTimeMs = CONFIG_BLINK_OFF_TIME_MS;
+  bool ledSequenceActive = provisioningConfirmation;
+  bool ledSequenceLedOn = provisioningConfirmation;
   uint32_t transmitSequence = 0U;
   uint8_t sensorPacket[SENSOR_PACKET_SIZE];
+  uint8_t linkCheckPacket[LINK_CHECK_PACKET_SIZE];
+  uint8_t configAckPacket[CONFIG_ACK_PACKET_SIZE];
+  SX1262RxPacket downlinkPacket;
+  uint32_t configTransactionId = 0U;
+  uint8_t configStatus = 0U;
+  uint16_t batteryMillivolts = 0U;
   GPIO_PinState rawButtonState =
       HAL_GPIO_ReadPin(Debug_Button_GPIO_Port, Debug_Button_Pin);
   GPIO_PinState previousRawButtonState = rawButtonState;
@@ -228,16 +378,26 @@ int main(void)
         (rawButtonState != debouncedButtonState))
     {
       debouncedButtonState = rawButtonState;
-      if ((debouncedButtonState == GPIO_PIN_RESET) &&
-          !SCD41_IsActive())
+      if (debouncedButtonState == GPIO_PIN_RESET)
       {
-        /* A press always requests a new sensor conversion before transmit. */
-        lastSensorCycleTick = now;
-        sensorMeasurementValid = false;
-        if (SCD41_StartSingleShot() != SCD41_STATUS_OK)
+        /* Identify this physical transmitter without blocking sensing/radio. */
+        ledSequenceBlinksRemaining = nodeConfig.node_id;
+        ledSequenceOnTimeMs = NODE_ID_BLINK_ON_TIME_MS;
+        ledSequenceOffTimeMs = NODE_ID_BLINK_OFF_TIME_MS;
+        ledSequenceActive = ledSequenceBlinksRemaining > 0U;
+        ledSequenceLedOn = ledSequenceActive;
+        ledSequenceTick = now;
+
+        if (!SCD41_IsActive())
         {
-          sensorCycleFailed = true;
-          sensorPacketPending = true;
+          /* A press always requests a new sensor conversion before transmit. */
+          lastSensorCycleTick = now;
+          sensorMeasurementValid = false;
+          if (SCD41_StartSingleShot() != SCD41_STATUS_OK)
+          {
+            sensorCycleFailed = true;
+            sensorPacketPending = true;
+          }
         }
       }
     }
@@ -281,16 +441,48 @@ int main(void)
       lastRadioInitTick = now;
       radioReady =
           SX1262_TX_Init(&radioStatus) == SX1262_TX_STATUS_OK;
+      if (radioReady && networkConfirmationPending &&
+          (networkCheckAttempts < NETWORK_CHECK_MAX_ATTEMPTS))
+      {
+        networkStartupCheckActive = true;
+        networkLinkPacketPending = true;
+      }
     }
 
-    if (radioReady && sensorPacketPending && !SX1262_TX_IsActive())
+    if (radioReady && networkLinkPacketPending &&
+        !SX1262_TX_IsActive())
+    {
+      networkCheckSequence = (uint32_t)networkCheckAttempts + 1U;
+      BuildLinkCheckPacket(linkCheckPacket,
+                           &nodeConfig,
+                           networkCheckSequence);
+      if (SX1262_TX_Start(linkCheckPacket, sizeof(linkCheckPacket)) ==
+          SX1262_TX_STATUS_OK)
+      {
+        networkCheckAttempts++;
+        networkLinkPacketPending = false;
+        networkLinkTransmitActive = true;
+      }
+      else
+      {
+        networkStartupCheckActive = false;
+        radioReady = false;
+        lastRadioInitTick = now;
+      }
+    }
+    else if (radioReady && sensorPacketPending && !SX1262_TX_IsActive())
     {
       uint32_t nextSequence = transmitSequence + 1U;
+      bool batteryValid =
+          BatteryADC_ReadMillivolts(&batteryMillivolts);
       BuildSensorPacket(sensorPacket,
                         &nodeConfig,
                         nextSequence,
                         buttonPressed,
+                        networkConfirmationPending,
                         sensorMeasurementValid,
+                        batteryValid,
+                        batteryMillivolts,
                         &sensorMeasurement,
                         SCD41_GetLastError());
 
@@ -298,44 +490,241 @@ int main(void)
           SX1262_TX_STATUS_OK)
       {
         transmitSequence = nextSequence;
+        if (networkConfirmationPending && !networkStartupCheckActive)
+        {
+          /* Later reports continue checking after a bounded boot failure. */
+          networkCheckSequence = nextSequence;
+        }
         sensorPacketPending = false;
+        sensorTransmitActive = true;
       }
       else
       {
+        networkStartupCheckActive = false;
         radioReady = false;
         lastRadioInitTick = now;
       }
     }
 
-    if (radioReady && SX1262_TX_IsActive())
+    if (radioReady && networkLinkTransmitActive)
     {
       SX1262TxEvent event = SX1262_TX_Poll();
       if (event == SX1262_TX_EVENT_DONE)
       {
-        ledFlashStartTick = now;
-        ledFlashActive = true;
+        networkLinkTransmitActive = false;
+        if (SX1262_TX_StartReceive(nodeConfig.downlink_window_ms) ==
+            SX1262_TX_STATUS_OK)
+        {
+          downlinkReceiveActive = true;
+        }
+        else
+        {
+          networkStartupCheckActive = false;
+          radioReady = false;
+          lastRadioInitTick = now;
+        }
       }
       else if ((event == SX1262_TX_EVENT_TIMEOUT) ||
                (event == SX1262_TX_EVENT_BUS_ERROR))
       {
+        networkLinkTransmitActive = false;
+        networkStartupCheckActive = false;
+        radioReady = false;
+        lastRadioInitTick = now;
+      }
+    }
+    else if (radioReady && sensorTransmitActive)
+    {
+      SX1262TxEvent event = SX1262_TX_Poll();
+      if (event == SX1262_TX_EVENT_DONE)
+      {
+        sensorTransmitActive = false;
+        if (SX1262_TX_StartReceive(nodeConfig.downlink_window_ms) ==
+            SX1262_TX_STATUS_OK)
+        {
+          downlinkReceiveActive = true;
+        }
+        else
+        {
+          networkStartupCheckActive = false;
+          radioReady = false;
+          lastRadioInitTick = now;
+        }
+      }
+      else if ((event == SX1262_TX_EVENT_TIMEOUT) ||
+               (event == SX1262_TX_EVENT_BUS_ERROR))
+      {
+        sensorTransmitActive = false;
+        networkStartupCheckActive = false;
+        radioReady = false;
+        lastRadioInitTick = now;
+      }
+    }
+    else if (radioReady && downlinkReceiveActive)
+    {
+      SX1262RxEvent event = SX1262_TX_PollReceive(&downlinkPacket);
+      if (event == SX1262_RX_EVENT_PACKET)
+      {
+        uint32_t previousConfigRevision = nodeConfig.revision;
+        downlinkReceiveActive = false;
+        bool configPacketAccepted =
+            ApplyConfigPacket(&downlinkPacket,
+                              &nodeConfig,
+                              &configTransactionId,
+                              &configStatus);
+        bool linkAcknowledged =
+            IsLinkAckPacket(&downlinkPacket,
+                            &nodeConfig,
+                            networkCheckSequence);
+
+        if (configPacketAccepted || linkAcknowledged)
+        {
+          bool wasStartupCheck = networkStartupCheckActive;
+          networkConfirmationPending = false;
+          networkStartupCheckActive = false;
+
+          if (linkAcknowledged && !wasStartupCheck)
+          {
+            /* Confirm recovery if the receiver was unavailable at startup. */
+            ledSequenceBlinksRemaining = CONFIG_BLINK_COUNT;
+            ledSequenceOnTimeMs = CONFIG_BLINK_ON_TIME_MS;
+            ledSequenceOffTimeMs = CONFIG_BLINK_OFF_TIME_MS;
+            ledSequenceActive = true;
+            ledSequenceLedOn = true;
+            ledSequenceTick = now;
+          }
+        }
+        else if (networkStartupCheckActive)
+        {
+          /* An unrelated downlink is not proof that this node was reached. */
+          if (networkCheckAttempts < NETWORK_CHECK_MAX_ATTEMPTS)
+          {
+            networkLinkPacketPending = true;
+          }
+          else
+          {
+            networkStartupCheckActive = false;
+            ledSequenceBlinksRemaining = NETWORK_FAIL_BLINK_COUNT;
+            ledSequenceOnTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
+            ledSequenceOffTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
+            ledSequenceActive = true;
+            ledSequenceLedOn = true;
+            ledSequenceTick = now;
+          }
+        }
+
+        if (configPacketAccepted)
+        {
+          if ((configStatus == NODE_CONFIG_STATUS_APPLIED) &&
+              (nodeConfig.revision != previousConfigRevision))
+          {
+            /* A short flurry confirms a newly accepted receiver command. */
+            ledSequenceBlinksRemaining = CONFIG_BLINK_COUNT;
+            ledSequenceOnTimeMs = CONFIG_BLINK_ON_TIME_MS;
+            ledSequenceOffTimeMs = CONFIG_BLINK_OFF_TIME_MS;
+            ledSequenceActive = true;
+            ledSequenceLedOn = true;
+            ledSequenceTick = now;
+          }
+          BuildConfigAckPacket(configAckPacket,
+                               &nodeConfig,
+                               configTransactionId,
+                               configStatus);
+          /* Give the receiver time to return from TX to continuous RX. */
+          HAL_Delay(30U);
+          if (SX1262_TX_Start(configAckPacket,
+                              sizeof(configAckPacket)) ==
+              SX1262_TX_STATUS_OK)
+          {
+            configAckTransmitActive = true;
+          }
+          else
+          {
+            radioReady = false;
+            lastRadioInitTick = now;
+          }
+        }
+      }
+      else if ((event == SX1262_RX_EVENT_TIMEOUT) ||
+               (event == SX1262_RX_EVENT_CRC_ERROR) ||
+               (event == SX1262_RX_EVENT_HEADER_ERROR))
+      {
+        downlinkReceiveActive = false;
+        if (networkStartupCheckActive)
+        {
+          if (networkCheckAttempts < NETWORK_CHECK_MAX_ATTEMPTS)
+          {
+            networkLinkPacketPending = true;
+          }
+          else
+          {
+            networkStartupCheckActive = false;
+            ledSequenceBlinksRemaining = NETWORK_FAIL_BLINK_COUNT;
+            ledSequenceOnTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
+            ledSequenceOffTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
+            ledSequenceActive = true;
+            ledSequenceLedOn = true;
+            ledSequenceTick = now;
+          }
+        }
+      }
+      else if (event == SX1262_RX_EVENT_BUS_ERROR)
+      {
+        downlinkReceiveActive = false;
+        networkStartupCheckActive = false;
+        radioReady = false;
+        lastRadioInitTick = now;
+      }
+    }
+    else if (radioReady && configAckTransmitActive)
+    {
+      SX1262TxEvent event = SX1262_TX_Poll();
+      if (event == SX1262_TX_EVENT_DONE)
+      {
+        configAckTransmitActive = false;
+      }
+      else if ((event == SX1262_TX_EVENT_TIMEOUT) ||
+               (event == SX1262_TX_EVENT_BUS_ERROR))
+      {
+        configAckTransmitActive = false;
         radioReady = false;
         lastRadioInitTick = now;
       }
     }
 
-    if (ledFlashActive &&
-        ((now - ledFlashStartTick) >= HEARTBEAT_ON_TIME_MS))
+    if (ledSequenceActive)
     {
-      ledFlashActive = false;
+      uint32_t phaseDuration = ledSequenceLedOn
+          ? ledSequenceOnTimeMs
+          : ledSequenceOffTimeMs;
+      if ((now - ledSequenceTick) >= phaseDuration)
+      {
+        ledSequenceTick = now;
+        if (ledSequenceLedOn)
+        {
+          ledSequenceLedOn = false;
+          ledSequenceBlinksRemaining--;
+          if (ledSequenceBlinksRemaining == 0U)
+          {
+            ledSequenceActive = false;
+          }
+        }
+        else
+        {
+          ledSequenceLedOn = true;
+        }
+      }
     }
 
-    if (buttonPressed)
+    if (ledSequenceActive)
     {
-      /* The button shorts PC14 to ground, so a low input means pressed. */
-      HAL_GPIO_WritePin(Debug_LED_GPIO_Port, Debug_LED_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(Debug_LED_GPIO_Port,
+                        Debug_LED_Pin,
+                        ledSequenceLedOn ? GPIO_PIN_SET : GPIO_PIN_RESET);
     }
-    else if (ledFlashActive)
+    else if (networkStartupCheckActive)
     {
+      /* Solid only during the bounded power-on receiver-range check. */
       HAL_GPIO_WritePin(Debug_LED_GPIO_Port, Debug_LED_Pin, GPIO_PIN_SET);
     }
     else if (radioReady && sensorCycleFailed &&

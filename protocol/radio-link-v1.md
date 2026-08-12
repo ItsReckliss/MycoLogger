@@ -9,7 +9,7 @@ first).
 | 0 | 4 | Magic | ASCII `MYCO` |
 | 4 | 1 | Protocol version | `1` |
 | 5 | 1 | Packet type | `1` = link test |
-| 6 | 4 | Node ID | Prototype transmitter is `1` |
+| 6 | 4 | Provisioned Node ID | `1` through `4294967294`; Node `0` never transmits |
 | 10 | 4 | TX sequence | Increments once per started transmission |
 | 14 | 4 | TX uptime | Whole seconds since MCU boot |
 | 18 | 1 | Flags | Bit 0 is set while the debug button is pressed |
@@ -18,11 +18,47 @@ Packet type `2` extends this common 19-byte header with an SCD41 measurement:
 
 | Offset | Size | Field | Value/meaning |
 |---:|---:|---|---|
-| 18 | 1 | Flags | Bit 0 = button pressed; bit 1 = sensor fields valid |
+| 18 | 1 | Flags | Bit 0 = button pressed; bit 1 = sensor fields valid; bit 2 = battery voltage valid; bit 3 = network confirmation requested |
 | 19 | 2 | CO2 | Unsigned concentration in ppm |
 | 21 | 2 | Temperature | Signed hundredths of a degree Celsius |
 | 23 | 2 | Relative humidity | Unsigned hundredths of percent RH |
 | 25 | 1 | Sensor diagnostic | `0` for success; nonzero SCD41 failure stage |
+| 26 | 4 | Configuration revision | Last accepted configuration revision |
+| 30 | 4 | Report interval | Current interval in whole seconds |
+| 34 | 2 | Battery voltage | Battery input in millivolts; valid when flag bit 2 is set |
+
+Older 26-byte type-2 packets remain valid; the configuration fields are an
+optional extension understood by server version 0.2 and later. The battery
+field is a further optional extension, so older 34-byte firmware remains
+compatible with the current server.
+
+## Configuration downlink
+
+Type `0x80` is a 22-byte server-to-node configuration transaction:
+
+| Offset | Size | Field |
+|---:|---:|---|
+| 0 | 4 | `MYCO` magic |
+| 4 | 1 | Protocol version `1` |
+| 5 | 1 | Packet type `0x80` |
+| 6 | 4 | Target permanent node ID |
+| 10 | 4 | Transaction ID |
+| 14 | 4 | Desired configuration revision |
+| 18 | 4 | Report interval in seconds |
+
+Type `0x81` is a 23-byte immediate node-to-server acknowledgment. It contains
+the node ID, transaction ID, current revision, one-byte status, and current
+report interval. Status `0` means applied; nonzero values indicate stale data,
+an invalid interval, or a flash write failure.
+
+Type `0x82` is a 14-byte receiver-to-node link acknowledgment. Bytes 6-9 hold
+the addressed node ID and bytes 10-13 echo the request/check sequence of the
+packet which requested confirmation. A node accepts it only when both fields
+match its current request.
+
+Type `3` is the matching 14-byte node-to-receiver boot link check. Bytes 6-9
+contain the node ID and bytes 10-13 contain a short-lived check sequence. The
+receiver answers it locally without forwarding it to the database service.
 
 Sensor diagnostic values are:
 
@@ -46,6 +82,29 @@ fails, the packet is still sent with the sensor-valid flag clear.
 A debounced transmitter button press requests the same complete fresh-sample
 cycle immediately. It does not retransmit cached sensor data. If a conversion
 is already underway, that in-progress fresh conversion satisfies the request.
+The press also starts a non-blocking node-identification pattern on the
+transmitter debug LED: node 1 flashes once, node 3 flashes three times, and so
+on. Holding the button does not hold the LED on. Periodic transmissions and
+configuration acknowledgements do not illuminate the LED, preserving battery
+power; boot, unprovisioned, sensor-fault, and radio-fault patterns remain
+available for diagnostics.
+
+When a new receiver configuration command is successfully persisted, the
+transmitter gives one six-flash acknowledgement flurry. Invalid, stale, and
+duplicate commands do not trigger it. The ST-LINK provisioner requests the same
+one-time flurry after its final reset; firmware consumes and clears that marker
+so later ordinary power cycles do not repeat the provisioning indication.
+
+On every ordinary power-up, the transmitter immediately sends a type `3` link
+check while the SCD41 measurement proceeds independently. Its LED remains solid
+while it waits for the addressed `0x82` response. The receiver returns the ACK
+after a short radio-turnaround delay. The node tries up to three times. Success
+turns the LED off, normally within one short radio round trip rather than after
+the five-second sensor conversion. If all attempts time out, two slower flashes
+report the failure and the LED stays off to prevent an unavailable receiver
+from draining the battery. Later normal sensor reports set the network
+confirmation flag until contact is restored; eventual recovery produces one
+short six-flash flurry.
 
 The receiver's debug LED blinks the decoded node ID after each valid `MYCO`
 packet: node 1 blinks once, node 3 blinks three times, and so on. Invalid or

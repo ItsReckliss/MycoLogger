@@ -15,6 +15,7 @@
 /* USER CODE BEGIN Includes */
 #include "sx1262.h"
 #include "usbd_cdc_if.h"
+#include "myco_command.h"
 #include <string.h>
 /* USER CODE END Includes */
 
@@ -33,9 +34,10 @@
 #define BUTTON_DEBOUNCE_TIME_MS    30U
 #define USB_STARTUP_DELAY_MS      1500U
 #define USB_MESSAGE_SIZE           320U
+#define LINK_ACK_TURNAROUND_MS       30U
 
 #define PROTOCOL_VERSION             1U
-#define FIRMWARE_VERSION       "0.3.0"
+#define FIRMWARE_VERSION       "0.5.0"
 
 /* USER CODE END PD */
 
@@ -69,6 +71,9 @@ static void USB_ReportPacket(const SX1262Packet *packet,
                              uint32_t sequence);
 static uint8_t Packet_GetNodeId(const SX1262Packet *packet,
                                 uint32_t *node_id);
+static uint8_t Packet_GetNetworkCheck(const SX1262Packet *packet,
+                                      uint32_t *node_id,
+                                      uint32_t *transmit_sequence);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -305,6 +310,39 @@ static uint8_t Packet_GetNodeId(const SX1262Packet *packet,
     return 1U;
 }
 
+static uint8_t Packet_GetNetworkCheck(const SX1262Packet *packet,
+                                      uint32_t *node_id,
+                                      uint32_t *transmit_sequence)
+{
+    if ((packet == NULL) || (node_id == NULL) ||
+        (transmit_sequence == NULL) || (packet->length < 14U) ||
+        (Packet_GetNodeId(packet, node_id) == 0U))
+    {
+        return 0U;
+    }
+
+    if (packet->payload[5] == 3U)
+    {
+        if (packet->length != MYCO_LINK_ACK_PACKET_SIZE)
+        {
+            return 0U;
+        }
+    }
+    else if ((packet->payload[5] != 2U) ||
+             (packet->length < 19U) ||
+             ((packet->payload[18] & 0x08U) == 0U))
+    {
+        return 0U;
+    }
+
+    *transmit_sequence =
+        ((uint32_t)packet->payload[10] << 24) |
+        ((uint32_t)packet->payload[11] << 16) |
+        ((uint32_t)packet->payload[12] << 8) |
+        (uint32_t)packet->payload[13];
+    return 1U;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -359,6 +397,14 @@ int main(void)
     uint8_t radio_status = 0U;
     SX1262Packet radio_packet;
     SX1262Event radio_event;
+    SX1262TxEvent radio_tx_event;
+    MycoDownlinkCommand downlink_command;
+    uint8_t downlink_packet[MYCO_CONFIG_PACKET_SIZE];
+    uint8_t link_ack_packet[MYCO_LINK_ACK_PACKET_SIZE];
+    uint8_t link_ack_pending = 0U;
+    uint32_t link_ack_node_id = 0U;
+    uint32_t link_ack_sequence = 0U;
+    uint32_t link_ack_queued_tick = 0U;
     SX1262Status radio_init_status =
         SX1262_StartReceiver(&radio_status);
 
@@ -412,12 +458,44 @@ int main(void)
             ((now - radio_poll_timer) >= RADIO_POLL_TIME_MS))
         {
             radio_poll_timer = now;
-            radio_event = SX1262_Poll(&radio_packet);
+            if (SX1262_IsTransmitting())
+            {
+                radio_tx_event = SX1262_PollTransmit();
+                if (radio_tx_event == SX1262_TX_EVENT_BUS_ERROR)
+                {
+                    USB_Print(
+                        "{\"v\":1,\"type\":\"radio_error\","
+                        "\"error\":\"downlink_bus\"}\n");
+                }
+                else if (radio_tx_event == SX1262_TX_EVENT_TIMEOUT)
+                {
+                    USB_Print(
+                        "{\"v\":1,\"type\":\"radio_error\","
+                        "\"error\":\"downlink_timeout\"}\n");
+                }
+                radio_event = SX1262_EVENT_NONE;
+            }
+            else
+            {
+                radio_event = SX1262_Poll(&radio_packet);
+            }
 
             if (radio_event == SX1262_EVENT_PACKET)
             {
+                uint8_t is_network_check;
                 packet_sequence++;
-                USB_ReportPacket(&radio_packet, packet_sequence);
+                is_network_check =
+                    Packet_GetNetworkCheck(&radio_packet,
+                                           &link_ack_node_id,
+                                           &link_ack_sequence);
+                /* The immediate type-3 check is radio-local and does not
+                   create a database event. Recovery checks piggybacked on a
+                   sensor report are still forwarded normally. */
+                if ((radio_packet.length < 6U) ||
+                    (radio_packet.payload[5] != 3U))
+                {
+                    USB_ReportPacket(&radio_packet, packet_sequence);
+                }
                 if (Packet_GetNodeId(&radio_packet, &packet_node_id) != 0U)
                 {
                     /* Restart the indication with the newest packet's node. */
@@ -428,6 +506,11 @@ int main(void)
                         LED_GPIO_Port,
                         LED_Pin,
                         (led_on != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+                }
+                if (is_network_check != 0U)
+                {
+                    link_ack_pending = 1U;
+                    link_ack_queued_tick = now;
                 }
             }
             else if (radio_event == SX1262_EVENT_CRC_ERROR)
@@ -453,6 +536,51 @@ int main(void)
                 USB_Print(
                     "{\"v\":1,\"type\":\"radio_error\","
                     "\"error\":\"bus\"}\n");
+            }
+        }
+
+        if ((radio_init_status == SX1262_STATUS_OK) &&
+            !SX1262_IsTransmitting() && (link_ack_pending != 0U) &&
+            ((now - link_ack_queued_tick) >= LINK_ACK_TURNAROUND_MS))
+        {
+            if (MycoCommand_TakeForNode(link_ack_node_id,
+                                       &downlink_command))
+            {
+                /* A real queued configuration also confirms the network. */
+                MycoCommand_BuildPacket(&downlink_command, downlink_packet);
+                if (SX1262_StartTransmit(downlink_packet,
+                                         sizeof(downlink_packet)) ==
+                    SX1262_STATUS_OK)
+                {
+                    link_ack_pending = 0U;
+                }
+            }
+            else
+            {
+                MycoCommand_BuildLinkAck(link_ack_node_id,
+                                         link_ack_sequence,
+                                         link_ack_packet);
+                if (SX1262_StartTransmit(link_ack_packet,
+                                         sizeof(link_ack_packet)) ==
+                    SX1262_STATUS_OK)
+                {
+                    link_ack_pending = 0U;
+                }
+            }
+        }
+        else if ((radio_init_status == SX1262_STATUS_OK) &&
+                 !SX1262_IsTransmitting() &&
+                 (link_ack_pending == 0U) &&
+                 MycoCommand_Take(&downlink_command))
+        {
+            MycoCommand_BuildPacket(&downlink_command, downlink_packet);
+            if (SX1262_StartTransmit(downlink_packet,
+                                     sizeof(downlink_packet)) !=
+                SX1262_STATUS_OK)
+            {
+                USB_Print(
+                    "{\"v\":1,\"type\":\"radio_error\","
+                    "\"error\":\"downlink_start\"}\n");
             }
         }
 

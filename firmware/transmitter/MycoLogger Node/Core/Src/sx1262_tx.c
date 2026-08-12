@@ -3,6 +3,7 @@
 
 /* SX1262 commands used by the transmitter. */
 #define CMD_SET_STANDBY             0x80U
+#define CMD_SET_RX                  0x82U
 #define CMD_SET_TX                  0x83U
 #define CMD_SET_RF_FREQUENCY        0x86U
 #define CMD_CALIBRATE               0x89U
@@ -18,14 +19,21 @@
 #define CMD_SET_DIO2_RF_SWITCH      0x9DU
 #define CMD_WRITE_REGISTER          0x0DU
 #define CMD_WRITE_BUFFER            0x0EU
+#define CMD_READ_BUFFER             0x1EU
 #define CMD_SET_DIO_IRQ_PARAMS      0x08U
 #define CMD_GET_IRQ_STATUS          0x12U
+#define CMD_GET_RX_BUFFER_STATUS    0x13U
 #define CMD_CLEAR_IRQ_STATUS        0x02U
 #define CMD_GET_STATUS              0xC0U
 
 #define IRQ_TX_DONE                 0x0001U
+#define IRQ_RX_DONE                 0x0002U
+#define IRQ_HEADER_ERROR            0x0020U
+#define IRQ_CRC_ERROR               0x0040U
 #define IRQ_TIMEOUT                 0x0200U
 #define IRQ_TRANSMITTER_MASK        (IRQ_TX_DONE | IRQ_TIMEOUT)
+#define IRQ_RECEIVER_MASK           (IRQ_RX_DONE | IRQ_HEADER_ERROR | \
+                                     IRQ_CRC_ERROR | IRQ_TIMEOUT)
 
 #define LORA_SYNC_WORD_MSB_ADDR     0x0740U
 #define RADIO_BUSY_TIMEOUT_MS       100U
@@ -33,6 +41,7 @@
 
 static bool radio_active;
 static uint32_t radio_tx_started_ms;
+static uint8_t radio_mode;
 
 static bool WaitWhileBusy(void);
 static uint8_t SPI_Transfer(uint8_t output);
@@ -46,6 +55,7 @@ static bool WriteRegister(uint16_t address,
 static bool WriteBuffer(uint8_t offset,
                         const uint8_t *data,
                         uint8_t length);
+static bool ReadBuffer(uint8_t offset, uint8_t *data, uint8_t length);
 static bool GetStatus(uint8_t *status);
 static void SelectRadio(void);
 static void DeselectRadio(void);
@@ -82,6 +92,7 @@ void SX1262_TX_BusInit(void)
     HAL_GPIO_Init(Radio_DIO1_GPIO_Port, &GPIO_InitStruct);
 
     radio_active = false;
+    radio_mode = 0U;
 }
 
 SX1262TxStatus SX1262_TX_Init(uint8_t *radio_status)
@@ -124,6 +135,7 @@ SX1262TxStatus SX1262_TX_Init(uint8_t *radio_status)
     uint8_t status = 0U;
 
     radio_active = false;
+    radio_mode = 0U;
 
     HAL_GPIO_WritePin(Radio_REST_GPIO_Port, Radio_REST_Pin, GPIO_PIN_RESET);
     HAL_Delay(2U);
@@ -212,6 +224,13 @@ SX1262TxStatus SX1262_TX_Start(const uint8_t *payload, uint8_t length)
     };
     static const uint8_t clear_all_irqs[] = {0xFFU, 0xFFU};
     static const uint8_t tx_timeout_3s[] = {0x02U, 0xEEU, 0x00U};
+    static const uint8_t irq_params[] = {
+        (uint8_t)(IRQ_TRANSMITTER_MASK >> 8),
+        (uint8_t)IRQ_TRANSMITTER_MASK,
+        (uint8_t)(IRQ_TRANSMITTER_MASK >> 8),
+        (uint8_t)IRQ_TRANSMITTER_MASK,
+        0x00U, 0x00U, 0x00U, 0x00U
+    };
 
     if ((payload == NULL) || (length == 0U) ||
         (length > SX1262_TX_MAX_PAYLOAD_SIZE) || radio_active)
@@ -223,6 +242,9 @@ SX1262TxStatus SX1262_TX_Start(const uint8_t *payload, uint8_t length)
                       packet_params,
                       sizeof(packet_params)) ||
         !WriteBuffer(0x00U, payload, length) ||
+        !WriteCommand(CMD_SET_DIO_IRQ_PARAMS,
+                      irq_params,
+                      sizeof(irq_params)) ||
         !WriteCommand(CMD_CLEAR_IRQ_STATUS,
                       clear_all_irqs,
                       sizeof(clear_all_irqs)) ||
@@ -233,6 +255,7 @@ SX1262TxStatus SX1262_TX_Start(const uint8_t *payload, uint8_t length)
 
     radio_tx_started_ms = HAL_GetTick();
     radio_active = true;
+    radio_mode = 1U;
     return SX1262_TX_STATUS_OK;
 }
 
@@ -242,7 +265,7 @@ SX1262TxEvent SX1262_TX_Poll(void)
     uint16_t irq_status;
     bool watchdog_expired;
 
-    if (!radio_active)
+    if (!radio_active || (radio_mode != 1U))
     {
         return SX1262_TX_EVENT_NONE;
     }
@@ -259,6 +282,7 @@ SX1262TxEvent SX1262_TX_Poll(void)
     if (!ReadCommand(CMD_GET_IRQ_STATUS, irq_bytes, sizeof(irq_bytes)))
     {
         radio_active = false;
+        radio_mode = 0U;
         return SX1262_TX_EVENT_BUS_ERROR;
     }
 
@@ -268,18 +292,21 @@ SX1262TxEvent SX1262_TX_Poll(void)
         !WriteCommand(CMD_CLEAR_IRQ_STATUS, irq_bytes, sizeof(irq_bytes)))
     {
         radio_active = false;
+        radio_mode = 0U;
         return SX1262_TX_EVENT_BUS_ERROR;
     }
 
     if ((irq_status & IRQ_TX_DONE) != 0U)
     {
         radio_active = false;
+        radio_mode = 0U;
         return SX1262_TX_EVENT_DONE;
     }
 
     if (((irq_status & IRQ_TIMEOUT) != 0U) || watchdog_expired)
     {
         radio_active = false;
+        radio_mode = 0U;
         return SX1262_TX_EVENT_TIMEOUT;
     }
 
@@ -289,6 +316,134 @@ SX1262TxEvent SX1262_TX_Poll(void)
 bool SX1262_TX_IsActive(void)
 {
     return radio_active;
+}
+
+SX1262TxStatus SX1262_TX_StartReceive(uint32_t window_ms)
+{
+    uint8_t packet_params[] = {
+        0x00U, 0x0CU,
+        0x00U,
+        SX1262_TX_MAX_PAYLOAD_SIZE,
+        0x01U,
+        0x00U
+    };
+    uint8_t rx_timeout[3];
+    uint32_t timeout_ticks;
+    static const uint8_t clear_all_irqs[] = {0xFFU, 0xFFU};
+    static const uint8_t irq_params[] = {
+        (uint8_t)(IRQ_RECEIVER_MASK >> 8),
+        (uint8_t)IRQ_RECEIVER_MASK,
+        (uint8_t)(IRQ_RECEIVER_MASK >> 8),
+        (uint8_t)IRQ_RECEIVER_MASK,
+        0x00U, 0x00U, 0x00U, 0x00U
+    };
+
+    if ((window_ms == 0U) || (window_ms > 60000U) || radio_active)
+    {
+        return SX1262_TX_STATUS_INVALID_ARGUMENT;
+    }
+
+    /* SX1262 RX timeout units are 15.625 us, or 64 ticks per ms. */
+    timeout_ticks = window_ms * 64U;
+    rx_timeout[0] = (uint8_t)(timeout_ticks >> 16);
+    rx_timeout[1] = (uint8_t)(timeout_ticks >> 8);
+    rx_timeout[2] = (uint8_t)timeout_ticks;
+
+    if (!WriteCommand(CMD_SET_PACKET_PARAMS,
+                      packet_params,
+                      sizeof(packet_params)) ||
+        !WriteCommand(CMD_SET_DIO_IRQ_PARAMS,
+                      irq_params,
+                      sizeof(irq_params)) ||
+        !WriteCommand(CMD_CLEAR_IRQ_STATUS,
+                      clear_all_irqs,
+                      sizeof(clear_all_irqs)) ||
+        !WriteCommand(CMD_SET_RX, rx_timeout, sizeof(rx_timeout)))
+    {
+        return SX1262_TX_STATUS_BUSY_TIMEOUT;
+    }
+
+    radio_active = true;
+    radio_mode = 2U;
+    return SX1262_TX_STATUS_OK;
+}
+
+SX1262RxEvent SX1262_TX_PollReceive(SX1262RxPacket *packet)
+{
+    uint8_t irq_bytes[2];
+    uint8_t buffer_status[2];
+    uint16_t irq_status;
+
+    if (!radio_active || (radio_mode != 2U))
+    {
+        return SX1262_RX_EVENT_NONE;
+    }
+    if ((packet == NULL) ||
+        !ReadCommand(CMD_GET_IRQ_STATUS, irq_bytes, sizeof(irq_bytes)))
+    {
+        radio_active = false;
+        radio_mode = 0U;
+        return SX1262_RX_EVENT_BUS_ERROR;
+    }
+
+    irq_status = ((uint16_t)irq_bytes[0] << 8) | irq_bytes[1];
+    if (irq_status == 0U)
+    {
+        return SX1262_RX_EVENT_NONE;
+    }
+    if (!WriteCommand(CMD_CLEAR_IRQ_STATUS, irq_bytes, sizeof(irq_bytes)))
+    {
+        radio_active = false;
+        radio_mode = 0U;
+        return SX1262_RX_EVENT_BUS_ERROR;
+    }
+
+    if ((irq_status & IRQ_CRC_ERROR) != 0U)
+    {
+        radio_active = false;
+        radio_mode = 0U;
+        return SX1262_RX_EVENT_CRC_ERROR;
+    }
+    if ((irq_status & IRQ_HEADER_ERROR) != 0U)
+    {
+        radio_active = false;
+        radio_mode = 0U;
+        return SX1262_RX_EVENT_HEADER_ERROR;
+    }
+    if ((irq_status & IRQ_TIMEOUT) != 0U)
+    {
+        radio_active = false;
+        radio_mode = 0U;
+        return SX1262_RX_EVENT_TIMEOUT;
+    }
+    if ((irq_status & IRQ_RX_DONE) == 0U)
+    {
+        return SX1262_RX_EVENT_NONE;
+    }
+
+    if (!ReadCommand(CMD_GET_RX_BUFFER_STATUS,
+                     buffer_status,
+                     sizeof(buffer_status)))
+    {
+        radio_active = false;
+        radio_mode = 0U;
+        return SX1262_RX_EVENT_BUS_ERROR;
+    }
+    packet->length = buffer_status[0];
+    if (packet->length > SX1262_TX_MAX_PAYLOAD_SIZE)
+    {
+        packet->length = SX1262_TX_MAX_PAYLOAD_SIZE;
+    }
+    if (!ReadBuffer(buffer_status[1], packet->payload, packet->length))
+    {
+        radio_active = false;
+        radio_mode = 0U;
+        return SX1262_RX_EVENT_BUS_ERROR;
+    }
+
+    radio_active = false;
+    radio_mode = 0U;
+    return SX1262_RX_EVENT_PACKET;
 }
 
 static bool WaitWhileBusy(void)
@@ -418,6 +573,26 @@ static bool WriteBuffer(uint8_t offset,
     DeselectRadio();
 
     return WaitWhileBusy();
+}
+
+static bool ReadBuffer(uint8_t offset, uint8_t *data, uint8_t length)
+{
+    if (!WaitWhileBusy())
+    {
+        return false;
+    }
+
+    SelectRadio();
+    (void)SPI_Transfer(CMD_READ_BUFFER);
+    (void)SPI_Transfer(offset);
+    (void)SPI_Transfer(0x00U);
+    for (uint8_t index = 0U; index < length; index++)
+    {
+        data[index] = SPI_Transfer(0x00U);
+    }
+    DeselectRadio();
+
+    return true;
 }
 
 static bool GetStatus(uint8_t *status)

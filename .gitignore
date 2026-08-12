@@ -1,5 +1,6 @@
 # Codex/CubeIDE temporary workspaces
 .codex-headless-workspace*/
+.cubeide-workspace/
 
 # STM32CubeIDE generated build products
 **/Debug/
@@ -22,6 +23,7 @@ venv/
 *.sqlite
 *.sqlite3
 logs/
+server/data/
 
 # Editor/OS files
 .DS_Store

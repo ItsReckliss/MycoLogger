@@ -1,38 +1,58 @@
 # MycoLogger configuration downlink plan
 
-This file records the intended configuration architecture; configuration
-commands are not enabled in the current test firmware.
+This file records the configuration architecture implemented by transmitter
+firmware, receiver firmware, and the server.
 
 ## Runtime settings
 
-Node firmware owns a single runtime configuration object. Initial fields are:
+Node firmware owns a single persistent configuration object. Current fields are:
 
-- node ID
+- permanent node ID (not remotely changeable)
 - sensor report interval in milliseconds
 - downlink receive-window duration in milliseconds
+- configuration revision and last applied transaction ID
 
-Future commands must validate a complete candidate configuration before
-changing the active object. Persistent storage can be added separately so a
-node may either retain settings across power loss or intentionally return to
-compiled defaults.
+The final 2 KB transmitter flash page is reserved for this object. A magic,
+layout version, and checksum reject erased or incompatible data. Flash is only
+erased when an actual new configuration transaction is accepted.
 
-## Planned exchange
+Application firmware is universal and compiles with Node ID 0. An erased or
+invalid configuration page therefore enters a silent provisioning state: the
+node does not initialize normal sensing/radio reporting and gives four repeating
+LED flashes. `tools/provision_transmitter.py` reads the STM32's factory 96-bit
+UID through ST-LINK, reserves an unused ID from the server, writes this same
+application image plus a board-specific configuration object, verifies it, and
+registers the UID-to-node mapping before reset. A valid saved node ID is loaded
+independently of the application's default, so normal firmware updates preserve
+identity when page 15 is not erased.
 
-1. A Raspberry Pi queues a targeted configuration transaction through the
-   receiver's USB CDC/ACM JSON interface.
+## Implemented exchange
+
+1. The server saves a targeted configuration transaction in SQLite.
 2. The node sends its normal sensor uplink.
 3. After TX-done, the node opens a short LoRa receive window using the configured
    duration. A value around 1.5 seconds is the current design default.
-4. If the receiver has a pending transaction for that node ID, it switches from
-   receive to transmit after the uplink and sends the command inside the window.
-5. The node validates the protocol version, target node ID, transaction ID,
-   command, value ranges, and integrity data before applying anything.
-6. The node includes the transaction ID and resulting configuration revision in
-   its next uplink as an acknowledgment. The receiver then removes the queued
-   transaction.
+4. The server writes `CFG <node> <transaction> <revision> <interval_s>` over
+   USB immediately after that node's uplink. The receiver switches from receive
+   to transmit and sends the binary command inside the window.
+5. The node validates the protocol version, target node ID, revision, command,
+   and value ranges before applying anything. LoRa payload CRC protects the
+   radio frame in transit.
+6. The node writes the candidate configuration to flash and immediately sends a
+   type-`0x81` acknowledgment. The server marks the transaction Applied only
+   after receiving the matching node ID and transaction ID.
 
-The receive window should remain disabled until this protocol exists; opening
-an empty window after every report would waste battery. Commands should be
-idempotent so retransmitting a transaction after a missed acknowledgment is
-safe. Authentication and replay protection must be added before configuration
-over radio is treated as trusted in a deployed system.
+Transactions are idempotent, so a missed acknowledgment can safely cause the
+same transaction to be sent after the next uplink. Every sensor uplink also
+reports the node's applied revision and interval; this confirms a change if the
+immediate acknowledgment was lost and lets a rebuilt Pi database learn the
+device's existing state. Revisions reject stale commands, while transaction IDs
+correlate acknowledgments without requiring the new server database to continue
+an old numeric sequence. Authentication and stronger replay protection must be
+added before radio configuration is treated as trusted in a hostile deployment.
+
+## Server-owned metadata
+
+Display name, location, notes, active state, and tub assignment never travel to
+the node. Tub assignment uses timestamped history, and each measurement records
+the tub active at receipt time so moving hardware cannot relabel older data.
