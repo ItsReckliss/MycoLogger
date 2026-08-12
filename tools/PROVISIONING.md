@@ -25,6 +25,10 @@ MCU UID keeps its registered ID; a new UID receives the lowest free ID. Entering
 an explicit free ID intentionally assigns or renumbers the transmitter. An ID
 already present in radio history, registered to another UID, or held by an
 active reservation produces an error and never falls back to another number.
+For nodes created before UID registration existed, Automatic mode may adopt the
+matching historical ID only after the utility has read that same valid ID from
+the transmitter's reserved flash. An ID registered to another UID remains an
+error.
 
 The equivalent non-graphical command is:
 

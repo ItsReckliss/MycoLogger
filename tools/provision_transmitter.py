@@ -361,6 +361,13 @@ def provision(
     )
     if effective_node_id is not None:
         payload["requested_node_id"] = effective_node_id
+    if (
+        existing_config is not None
+        and effective_node_id == existing_config["node_id"]
+    ):
+        # This safely migrates pre-provisioner nodes whose radio history exists
+        # but whose immutable MCU UID has never been registered by the server.
+        payload["claim_existing_node"] = True
     reservation_response = api_request(
         server, "POST", "/api/provisioning/reservations", payload
     )

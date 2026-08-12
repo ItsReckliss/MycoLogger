@@ -389,6 +389,45 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(node["battery_mv"], 3987)
         self.assertEqual(node["battery_voltage_v"], 3.987)
 
+    def test_pre_provisioner_node_can_be_adopted_only_with_flash_proof(self) -> None:
+        self.assertTrue(self.ingest(sensor_record(node_id=1)))
+        uid_a = "00112233445566778899AABB"
+        uid_b = "FFEEDDCCBBAA998877665544"
+
+        with self.assertRaisesRegex(ValueError, "already in use or reserved"):
+            reserve_node_id(
+                self.database_path,
+                hardware_uid=uid_a,
+                reservation_token="f" * 32,
+                requested_node_id=1,
+                ttl_seconds=300,
+            )
+
+        adopted = reserve_node_id(
+            self.database_path,
+            hardware_uid=uid_a,
+            reservation_token="1" * 32,
+            requested_node_id=1,
+            ttl_seconds=300,
+            claim_existing_node=True,
+        )
+        self.assertEqual(adopted["node_id"], 1)
+        complete_node_provisioning(
+            self.database_path,
+            reservation_token="1" * 32,
+            hardware_uid=uid_a,
+        )
+
+        with self.assertRaisesRegex(ValueError, "already in use or reserved"):
+            reserve_node_id(
+                self.database_path,
+                hardware_uid=uid_b,
+                reservation_token="2" * 32,
+                requested_node_id=1,
+                ttl_seconds=300,
+                claim_existing_node=True,
+            )
+
     def test_transmitter_firmware_is_cached_on_node(self) -> None:
         self.assertTrue(
             self.ingest(sensor_record(firmware_version=(0, 6, 0)))

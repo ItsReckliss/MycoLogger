@@ -136,6 +136,12 @@ occupied ID fails instead of silently falling back. The selected application
 and resulting configuration are both written and verified before registration
 is completed and the MCU is reset.
 
+A legacy transmitter that was flashed before UID registration existed can be
+adopted without renumbering: the flash utility must first read the matching
+valid node ID from its reserved flash. The trusted provisioning API permits
+that one historical database row to be claimed only when no other UID or active
+reservation owns the ID.
+
 Provisioning reservations last five minutes. IDs already present in the nodes
 table, permanently registered to another hardware UID, or actively reserved by
 another provisioner are unavailable. The database uses unique active-reservation

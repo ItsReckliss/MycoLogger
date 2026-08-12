@@ -1913,6 +1913,7 @@ def reserve_node_id(
     reservation_token: str,
     requested_node_id: int | None,
     ttl_seconds: int,
+    claim_existing_node: bool = False,
 ) -> dict[str, Any]:
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
@@ -1953,7 +1954,33 @@ def reserve_node_id(
         if node_id <= 0 or node_id >= 0xFFFFFFFF:
             raise ValueError("Node ID must be between 1 and 4294967294")
         if node_id in occupied:
-            raise ValueError(f"Node ID {node_id} is already in use or reserved")
+            registered_conflict = connection.execute(
+                """
+                SELECT 1 FROM provisioned_transmitters
+                WHERE node_id = ? AND hardware_uid != ?
+                """,
+                (node_id, hardware_uid),
+            ).fetchone()
+            reservation_conflict = connection.execute(
+                """
+                SELECT 1 FROM provisioning_reservations
+                WHERE node_id = ? AND hardware_uid != ? AND status = 'active'
+                """,
+                (node_id, hardware_uid),
+            ).fetchone()
+            historical_node = connection.execute(
+                "SELECT 1 FROM nodes WHERE node_id = ?",
+                (node_id,),
+            ).fetchone()
+            may_adopt_history = (
+                claim_existing_node
+                and requested_node_id == node_id
+                and historical_node is not None
+                and registered_conflict is None
+                and reservation_conflict is None
+            )
+            if not may_adopt_history:
+                raise ValueError(f"Node ID {node_id} is already in use or reserved")
 
         connection.execute(
             """

@@ -143,6 +143,7 @@ class SpawnJarGroups(BaseModel):
 class ProvisioningReservationRequest(BaseModel):
     hardware_uid: str = Field(min_length=24, max_length=24)
     requested_node_id: int | None = Field(default=None, ge=1, le=4294967294)
+    claim_existing_node: bool = False
 
 
 class ProvisioningReservationAction(BaseModel):
@@ -258,6 +259,7 @@ def create_provisioning_reservation(
             hardware_uid=hardware_uid,
             reservation_token=uuid4().hex,
             requested_node_id=request.requested_node_id,
+            claim_existing_node=request.claim_existing_node,
             ttl_seconds=5 * 60,
         )
     except ValueError as exc:
