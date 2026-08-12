@@ -38,9 +38,10 @@ Last reviewed: 2026-08-12.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build: v0.6.0.
-- Physical test transmitter: Node 1, UID `0F0023000650335848323020`, successfully
-  flashed with v0.6.0 and registered to that permanent node ID.
+- Transmitter source/build: v0.6.1.
+- Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
+  flashed with v0.6.0 and registered to that permanent node ID. The corrected
+  v0.6.1 image is built but has not been flashed because no ST-LINK is attached.
 - Receiver source/build: v0.6.0.
 - Physical USB receiver: connected and receiving packets, but its installed
   version is still unknown/older. It must be put into its bootloader and flashed
@@ -53,9 +54,12 @@ Last reviewed: 2026-08-12.
 - Local work is committed by coherent change. Pushes are intentionally batched
   until a meaningful amount of work is ready.
 
-Important current fault: Node 1's battery field is approximately `3 mV`, while
-the battery is expected to be around `3.8 V`. The PA0 ADC/divider implementation
-or conversion must be diagnosed before battery data is trusted.
+Battery fault status: the physical PA0 divider measures `1.8427 V`, corresponding
+to approximately `3.6854 V` at the battery through the equal-value divider. The
+v0.6.0 firmware followed the erroneous DS14581 Rev 2 channel labels and sampled
+PA1/radio BUSY instead of PA0. Transmitter v0.6.1 selects the corrected silicon
+channels (PA0/ADC1_IN4 and VREFINT/ADC1_IN11); it still needs to be flashed and
+verified before dashboard battery data is trusted.
 
 ## Hardware
 

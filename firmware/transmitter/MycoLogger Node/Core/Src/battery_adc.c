@@ -9,6 +9,14 @@
 #define VREFINT_CAL_VDDA_MV             3000UL
 #define ADC_OPERATION_TIMEOUT_MS        5UL
 
+/*
+ * STM32U031 ADC channel numbers in DS14581 Rev 2 are shifted by one.
+ * The silicon mapping is PA0 = ADC1_IN4 and VREFINT = ADC1_IN11.
+ * Selecting the documented IN5/IN12 pair reads PA1 (radio BUSY) first.
+ */
+#define BATTERY_ADC_CHANNEL             ADC_CHSELR_CHSEL4
+#define VREFINT_ADC_CHANNEL             ADC_CHSELR_CHSEL11
+
 /* Retained in SRAM so an attached debugger can inspect the last conversion. */
 volatile uint32_t g_battery_divider_adc_raw = 0UL;
 volatile uint32_t g_battery_vrefint_adc_raw = 0UL;
@@ -103,8 +111,8 @@ bool BatteryADC_ReadMillivolts(uint16_t *battery_mv)
     }
 
     ADC1->ISR = ADC_ISR_CCRDY;
-    /* On STM32U031 TSSOP20, physical pin 8 / PA0 is ADC1_IN5. */
-    ADC1->CHSELR = ADC_CHSELR_CHSEL5 | ADC_CHSELR_CHSEL12;
+    /* PA0 is converted first, followed by the higher-numbered VREFINT. */
+    ADC1->CHSELR = BATTERY_ADC_CHANNEL | VREFINT_ADC_CHANNEL;
     if (!WaitForSet(&ADC1->ISR, ADC_ISR_CCRDY, ADC_OPERATION_TIMEOUT_MS))
     {
         PowerDown();
