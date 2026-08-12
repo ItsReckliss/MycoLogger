@@ -14,14 +14,16 @@ Maintenance rules:
 
 ## Priority 1 - Correctness and reliability
 
-- [ ] Finish validating corrected transmitter battery-voltage reporting.
+- [x] ~~Finish validating corrected transmitter battery-voltage reporting.~~
   - [x] ~~Verify the external divider: PA0 measures 1.8427 V, corresponding to
         approximately 3.6854 V at the battery.~~
-  - [x] ~~Correct the STM32U031 ADC selections from the erroneous DS14581 Rev 2
-        labels to the silicon mappings PA0/ADC1_IN4 and VREFINT/ADC1_IN11.~~
-  - [x] ~~Build transmitter firmware v0.6.1 with the ADC correction.~~
-  - [ ] Flash Node 1 with v0.6.1 and verify the transmitted voltage against a
-        simultaneous battery-terminal multimeter measurement.
+  - [x] ~~Correct the STM32U031 external ADC selection to PA0/ADC1_IN4 and use
+        the verified STM32U031F6 internal VREFINT channel 12.~~
+  - [x] ~~Convert the divider and VREFINT separately so each EOC corresponds to
+        a fresh data-register result.~~
+  - [x] ~~Build and flash transmitter v0.6.3 to Node 1.~~
+  - [x] ~~Verify the live dashboard reports 3.759 V, consistent with the
+        1.8427 V divider measurement and approximately 3.6854 V battery.~~
 - [ ] Correct the SCD41 measurement strategy.
   - [ ] Discard the first single-shot CO2 result after physically powering the
         sensor on, as required for stabilization.

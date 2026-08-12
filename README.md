@@ -38,28 +38,28 @@ Last reviewed: 2026-08-12.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build: v0.6.1.
+- Transmitter source/build: v0.6.3.
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
-  flashed with v0.6.0 and registered to that permanent node ID. The corrected
-  v0.6.1 image is built but has not been flashed because no ST-LINK is attached.
+  flashed with v0.6.3 and registered to that permanent node ID.
 - Receiver source/build: v0.6.0.
 - Physical USB receiver: connected and receiving packets, but its installed
   version is still unknown/older. It must be put into its bootloader and flashed
   with receiver v0.6.0 before receiver version queries and the newest link/config
   behavior can be assumed.
-- Node 1 reports transmitter firmware `0.6.0` to the dashboard.
+- Node 1 reports transmitter firmware `0.6.3` and battery voltage `3.759 V` to
+  the dashboard.
 - The BTT Pi target is `mycopi.local`, but deployment of the current server as a
   managed Pi service is not complete.
 - Git remote: `https://github.com/ItsReckliss/MycoLogger.git`.
 - Local work is committed by coherent change. Pushes are intentionally batched
   until a meaningful amount of work is ready.
 
-Battery fault status: the physical PA0 divider measures `1.8427 V`, corresponding
-to approximately `3.6854 V` at the battery through the equal-value divider. The
-v0.6.0 firmware followed the erroneous DS14581 Rev 2 channel labels and sampled
-PA1/radio BUSY instead of PA0. Transmitter v0.6.1 selects the corrected silicon
-channels (PA0/ADC1_IN4 and VREFINT/ADC1_IN11); it still needs to be flashed and
-verified before dashboard battery data is trusted.
+Battery status: the physical PA0 divider measured `1.8427 V`, corresponding to
+approximately `3.6854 V` at the battery through the equal-value divider. Live
+ST-LINK inspection proved PA0 uses ADC channel 4 on this MCU, while its internal
+VREFINT uses channel 12. Transmitter v0.6.3 converts those channels separately
+to avoid stale EOC results and reports `3.759 V`; this is consistent with the
+multimeter measurement and expected battery voltage.
 
 ## Hardware
 
@@ -315,12 +315,11 @@ reserved configuration page.
 The complete ordered list is in [TO-DO.md](TO-DO.md). The most important current
 items are:
 
-1. Diagnose and correct the transmitter battery ADC result.
-2. Flash and verify receiver v0.6.0 on the physical USB receiver.
-3. Correct and validate the SCD41 measurement/power strategy.
-4. Add watchdogs and persistent-configuration power-loss resilience.
-5. Reduce transmitter consumption with SX1262 sleep and STM32 Stop 2.
-6. Finish the managed Pi deployment, backups, and health monitoring.
-7. Export the complete editable EasyEDA hardware projects and revision-matched
+1. Flash and verify receiver v0.6.0 on the physical USB receiver.
+2. Correct and validate the SCD41 measurement/power strategy.
+3. Add watchdogs and persistent-configuration power-loss resilience.
+4. Reduce transmitter consumption with SX1262 sleep and STM32 Stop 2.
+5. Finish the managed Pi deployment, backups, and health monitoring.
+6. Export the complete editable EasyEDA hardware projects and revision-matched
    manufacturing files, then develop and test printable transmitter and
    receiver enclosures with editable CAD sources kept under `hardware/`.

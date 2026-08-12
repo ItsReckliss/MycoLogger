@@ -10,12 +10,12 @@
 #define ADC_OPERATION_TIMEOUT_MS        5UL
 
 /*
- * STM32U031 ADC channel numbers in DS14581 Rev 2 are shifted by one.
- * The silicon mapping is PA0 = ADC1_IN4 and VREFINT = ADC1_IN11.
- * Selecting the documented IN5/IN12 pair reads PA1 (radio BUSY) first.
+ * STM32U031 external ADC channel numbers in DS14581 Rev 2 are shifted by one,
+ * so PA0 is ADC1_IN4 rather than ADC1_IN5. On the STM32U031F6 Rev A used by
+ * the transmitter, VREFINT remains on internal channel 12.
  */
 #define BATTERY_ADC_CHANNEL             ADC_CHSELR_CHSEL4
-#define VREFINT_ADC_CHANNEL             ADC_CHSELR_CHSEL11
+#define VREFINT_ADC_CHANNEL             ADC_CHSELR_CHSEL12
 
 /* Retained in SRAM so an attached debugger can inspect the last conversion. */
 volatile uint32_t g_battery_divider_adc_raw = 0UL;
@@ -66,6 +66,36 @@ static void PowerDown(void)
     __HAL_RCC_ADC_CLK_DISABLE();
 }
 
+static bool ConvertChannel(uint32_t channel, uint32_t *raw)
+{
+    if (raw == NULL)
+    {
+        return false;
+    }
+
+    /*
+     * Convert one channel at a time. A multi-channel scan can leave EOC set
+     * while the next result is not yet in DR on this ADC, which made the
+     * second (VREFINT) read return zero.
+     */
+    ADC1->ISR = ADC_ISR_CCRDY | ADC_ISR_EOC | ADC_ISR_EOS | ADC_ISR_OVR;
+    ADC1->CHSELR = channel;
+    if (!WaitForSet(&ADC1->ISR, ADC_ISR_CCRDY, ADC_OPERATION_TIMEOUT_MS))
+    {
+        return false;
+    }
+
+    ADC1->ISR = ADC_ISR_EOC | ADC_ISR_EOS | ADC_ISR_OVR;
+    ADC1->CR |= ADC_CR_ADSTART;
+    if (!WaitForSet(&ADC1->ISR, ADC_ISR_EOC, ADC_OPERATION_TIMEOUT_MS))
+    {
+        return false;
+    }
+
+    *raw = ADC1->DR;
+    return true;
+}
+
 void BatteryADC_InitPin(void)
 {
     GPIO_InitTypeDef gpio = {0};
@@ -110,15 +140,6 @@ bool BatteryADC_ReadMillivolts(uint16_t *battery_mv)
         return false;
     }
 
-    ADC1->ISR = ADC_ISR_CCRDY;
-    /* PA0 is converted first, followed by the higher-numbered VREFINT. */
-    ADC1->CHSELR = BATTERY_ADC_CHANNEL | VREFINT_ADC_CHANNEL;
-    if (!WaitForSet(&ADC1->ISR, ADC_ISR_CCRDY, ADC_OPERATION_TIMEOUT_MS))
-    {
-        PowerDown();
-        return false;
-    }
-
     ADC1->ISR = ADC_ISR_ADRDY;
     ADC1->CR |= ADC_CR_ADEN;
     if (!WaitForSet(&ADC1->ISR, ADC_ISR_ADRDY, ADC_OPERATION_TIMEOUT_MS))
@@ -127,21 +148,12 @@ bool BatteryADC_ReadMillivolts(uint16_t *battery_mv)
         return false;
     }
 
-    ADC1->ISR = ADC_ISR_EOC | ADC_ISR_EOS | ADC_ISR_OVR;
-    ADC1->CR |= ADC_CR_ADSTART;
-    if (!WaitForSet(&ADC1->ISR, ADC_ISR_EOC, ADC_OPERATION_TIMEOUT_MS))
+    if (!ConvertChannel(BATTERY_ADC_CHANNEL, &divider_raw) ||
+        !ConvertChannel(VREFINT_ADC_CHANNEL, &vref_raw))
     {
         PowerDown();
         return false;
     }
-    divider_raw = ADC1->DR;
-
-    if (!WaitForSet(&ADC1->ISR, ADC_ISR_EOC, ADC_OPERATION_TIMEOUT_MS))
-    {
-        PowerDown();
-        return false;
-    }
-    vref_raw = ADC1->DR;
     g_battery_divider_adc_raw = divider_raw;
     g_battery_vrefint_adc_raw = vref_raw;
     PowerDown();
