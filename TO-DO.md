@@ -1,7 +1,16 @@
 # MycoLogger To-Do
 
-This is the working roadmap for MycoLogger. Check items off as they are
-implemented and verified on real hardware.
+This is the working roadmap for MycoLogger and should be reviewed after every
+completed unit of work.
+
+Maintenance rules:
+
+- Add newly discovered work as soon as it becomes concrete.
+- Mark completed and verified work with `[x]` and strikethrough.
+- Keep completed entries when they provide useful project history; remove them
+  only when they no longer add value.
+- Update parent and child checkboxes together when an entire group is complete.
+- Review this file before creating each local Git commit.
 
 ## Priority 1 - Correctness and reliability
 
@@ -94,8 +103,8 @@ implemented and verified on real hardware.
 - [ ] Add health monitoring for disk space, database integrity, receiver USB
       connection, and service uptime.
 - [ ] Document the Windows-to-Pi development, test, deploy, and rollback flow.
-- [ ] Connect the repository to the intended GitHub remote and establish a
-      predictable release/tagging process if this is not already finalized.
+- [x] ~~Connect the repository to the intended GitHub remote.~~
+- [ ] Establish a predictable release and tagging process.
 
 ## Hardware revision ideas
 
@@ -133,17 +142,13 @@ implemented and verified on real hardware.
 
 ## Completed foundation
 
-- [x] Transmitter reads SCD41 temperature, humidity, and CO2.
-- [x] Transmitter reports battery voltage.
-- [x] Receiver exposes packets through cross-platform USB CDC/ACM serial.
-- [x] Receiver service automatically discovers/reconnects and stores readings.
-- [x] Web dashboard shows nodes, current tubs, current jars, graphs, notes, and
-      photos with captured environmental conditions.
-- [x] Report interval can be changed through the receiver and acknowledged by
-      the transmitter.
-- [x] Universal transmitter firmware and ST-LINK provisioning utility assign
-      permanent node IDs using the MCU hardware UID and server reservations.
-- [x] Transmitter debug button requests a fresh reading and identifies the node.
-- [x] Transmitter and receiver implement a bounded power-on link confirmation.
-- [x] Automatic transmissions do not unnecessarily illuminate the transmitter
-      debug LED.
+- [x] ~~Transmitter reads SCD41 temperature, humidity, and CO2.~~
+- [x] ~~Transmitter reports battery voltage.~~
+- [x] ~~Receiver exposes packets through cross-platform USB CDC/ACM serial.~~
+- [x] ~~Receiver service automatically discovers, reconnects, and stores readings.~~
+- [x] ~~Web dashboard shows nodes, tubs, jars, graphs, notes, and photos with captured conditions.~~
+- [x] ~~Report interval can be changed through the receiver and acknowledged by the transmitter.~~
+- [x] ~~Universal firmware and the ST-LINK provisioner assign permanent node IDs using MCU UIDs and server reservations.~~
+- [x] ~~The transmitter debug button requests a fresh reading and identifies the node.~~
+- [x] ~~Transmitter and receiver implement a bounded power-on link confirmation.~~
+- [x] ~~Automatic transmissions do not unnecessarily illuminate the transmitter debug LED.~~
