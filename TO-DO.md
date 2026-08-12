@@ -148,6 +148,7 @@ Maintenance rules:
 
 ## Completed foundation
 
+- [x] ~~Add a guarded, double-clickable GitHub push helper for accumulated local commits.~~
 - [x] ~~Add a root project overview and continuation handoff in `README.md`.~~
 - [x] ~~Transmitter reads SCD41 temperature, humidity, and CO2.~~
 - [x] ~~Transmitter reports battery voltage.~~
