@@ -14,6 +14,9 @@ Maintenance rules:
 
 ## Priority 1 - Correctness and reliability
 
+- [ ] Correct and validate transmitter battery-voltage reporting; Node 1 v0.6.0
+      currently reports approximately 3 mV while the cell is expected near
+      3.8 V.
 - [ ] Correct the SCD41 measurement strategy.
   - [ ] Discard the first single-shot CO2 result after physically powering the
         sensor on, as required for stabilization.
@@ -145,6 +148,7 @@ Maintenance rules:
 
 ## Completed foundation
 
+- [x] ~~Add a root project overview and continuation handoff in `README.md`.~~
 - [x] ~~Transmitter reads SCD41 temperature, humidity, and CO2.~~
 - [x] ~~Transmitter reports battery voltage.~~
 - [x] ~~Receiver exposes packets through cross-platform USB CDC/ACM serial.~~
