@@ -26,11 +26,17 @@ Packet type `2` extends this common 19-byte header with an SCD41 measurement:
 | 26 | 4 | Configuration revision | Last accepted configuration revision |
 | 30 | 4 | Report interval | Current interval in whole seconds |
 | 34 | 2 | Battery voltage | Battery input in millivolts; valid when flag bit 2 is set |
+| 36 | 1 | Firmware major | Semantic firmware-version major component |
+| 37 | 1 | Firmware minor | Semantic firmware-version minor component |
+| 38 | 1 | Firmware patch | Semantic firmware-version patch component |
 
 Older 26-byte type-2 packets remain valid; the configuration fields are an
 optional extension understood by server version 0.2 and later. The battery
 field is a further optional extension, so older 34-byte firmware remains
-compatible with the current server.
+compatible with the current server. Transmitter v0.6.0 adds the optional
+three-byte version extension. It is repeated in every measurement so a server
+restart, database restore, or missed first packet repairs the cached version
+without a special radio exchange.
 
 ## Configuration downlink
 

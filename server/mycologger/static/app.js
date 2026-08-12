@@ -17,6 +17,7 @@ const ui = {
   receiverPort: document.querySelector("#receiver-port"),
   receiverFormState: document.querySelector("#receiver-form-state"),
   receiverFormPort: document.querySelector("#receiver-form-port"),
+  receiverFirmware: document.querySelector("#receiver-firmware"),
   receiverRecordCount: document.querySelector("#receiver-record-count"),
   receiverPacketCount: document.querySelector("#receiver-packet-count"),
   receiverStoredCount: document.querySelector("#receiver-stored-count"),
@@ -605,7 +606,7 @@ function makeNodeRow(node) {
   const name = document.createElement("strong");
   name.textContent = node.name;
   const detail = document.createElement("span");
-  detail.textContent = `Node ${node.node_id} · ${node.tub_name || "Unassigned"} · ${new Date(node.last_seen_utc).toLocaleString()}`;
+  detail.textContent = `Node ${node.node_id} · FW ${node.firmware_version || "unknown"} · ${node.tub_name || "Unassigned"} · ${new Date(node.last_seen_utc).toLocaleString()}`;
   const configState = document.createElement("span");
   configState.className = `node-config-state ${node.command_status}`;
   configState.textContent = `Config: ${node.command_status}`;
@@ -657,7 +658,7 @@ async function openNodeSettings(nodeId) {
   const node = cachedNodes.find((item) => item.node_id === nodeId);
   if (!node) return;
   editingNodeId = nodeId;
-  ui.settingsNodeId.textContent = `Permanent node ID: ${nodeId}`;
+  ui.settingsNodeId.textContent = `Permanent node ID: ${nodeId} · Firmware: ${node.firmware_version || "unknown"}`;
   ui.settingsName.value = node.name;
   ui.settingsTub.value = node.tub_name || "";
   ui.settingsLocation.value = node.location || "";
@@ -1648,6 +1649,7 @@ function setReceiverState(receiver) {
   ui.receiverPort.textContent = port;
   ui.receiverFormState.value = state;
   ui.receiverFormPort.value = receiver.port || "Automatic detection";
+  ui.receiverFirmware.value = receiver.firmware_version || "Unknown";
   ui.receiverRecordCount.textContent = receiver.records_received.toLocaleString();
   ui.receiverPacketCount.textContent = receiver.packets_received.toLocaleString();
   ui.receiverStoredCount.textContent = receiver.measurements_stored.toLocaleString();

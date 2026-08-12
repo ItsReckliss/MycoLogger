@@ -51,7 +51,7 @@
 #define NETWORK_FAIL_BLINK_TIME_MS     250U
 #define RADIO_RETRY_INTERVAL_MS     5000U
 #define RADIO_ERROR_PATTERN_MS      2000U
-#define SENSOR_PACKET_SIZE            36U
+#define SENSOR_PACKET_SIZE            39U
 #define CONFIG_PACKET_SIZE            22U
 #define CONFIG_ACK_PACKET_SIZE        23U
 #define TEST_PACKET_VERSION            1U
@@ -63,6 +63,9 @@
 #define LINK_ACK_PACKET_SIZE           14U
 #define LINK_CHECK_PACKET_SIZE         14U
 #define DEFAULT_NODE_ID                0U
+#define FIRMWARE_VERSION_MAJOR         0U
+#define FIRMWARE_VERSION_MINOR         6U
+#define FIRMWARE_VERSION_PATCH         0U
 
 /* USER CODE END PD */
 
@@ -158,6 +161,12 @@ static void BuildSensorPacket(uint8_t *packet,
   WriteUint32BigEndian(&packet[30], config->report_interval_ms / 1000U);
   WriteUint16BigEndian(&packet[34],
                        batteryValid ? batteryMillivolts : 0U);
+  /* A compact semantic version is included in every measurement. Repeating
+     three bytes makes version discovery self-healing after server restarts or
+     database restores without materially affecting LoRa airtime. */
+  packet[36] = FIRMWARE_VERSION_MAJOR;
+  packet[37] = FIRMWARE_VERSION_MINOR;
+  packet[38] = FIRMWARE_VERSION_PATCH;
 }
 
 static bool ApplyConfigPacket(const SX1262RxPacket *packet,

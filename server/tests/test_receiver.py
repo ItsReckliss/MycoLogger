@@ -42,6 +42,7 @@ from tools.provision_transmitter import (
     CONFIG_PROVISIONING_MARKER,
     build_config_image,
     fnv1a32,
+    parse_config_image,
     validate_firmware_image,
 )
 
@@ -57,6 +58,7 @@ def sensor_record(
     config_revision: int | None = None,
     report_interval_s: int | None = None,
     battery_mv: int | None = None,
+    firmware_version: tuple[int, int, int] | None = None,
     network_confirmation_requested: bool = False,
 ) -> dict:
     payload = bytearray(b"MYCO")
@@ -81,6 +83,10 @@ def sensor_record(
             payload.extend((0).to_bytes(4, "big"))
             payload.extend((60).to_bytes(4, "big"))
         payload.extend(battery_mv.to_bytes(2, "big"))
+    if firmware_version is not None:
+        if len(payload) < 36:
+            payload.extend(bytes(36 - len(payload)))
+        payload.extend(firmware_version)
     return {
         "v": 1,
         "type": "packet",
@@ -178,6 +184,14 @@ class ProtocolTests(unittest.TestCase):
         assert decoded is not None
         self.assertTrue(decoded["network_confirmation_requested"])
 
+    def test_decodes_transmitter_firmware_version(self) -> None:
+        decoded = decode_radio_payload(
+            sensor_record(battery_mv=3987, firmware_version=(0, 6, 0))
+        )
+        self.assertIsNotNone(decoded)
+        assert decoded is not None
+        self.assertEqual(decoded["firmware_version"], "0.6.0")
+
     def test_provisioning_config_matches_firmware_layout(self) -> None:
         import struct
 
@@ -190,6 +204,17 @@ class ProtocolTests(unittest.TestCase):
         )
         self.assertEqual(values[5:7], (0, CONFIG_PROVISIONING_MARKER))
         self.assertEqual(values[7], fnv1a32(image[:28]))
+
+        parsed = parse_config_image(image)
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed["node_id"], 2)
+        self.assertEqual(parsed["report_interval_s"], 900)
+
+    def test_invalid_provisioning_config_is_not_reused(self) -> None:
+        image = bytearray(build_config_image(2, 900, 1500))
+        image[8] ^= 0x01
+        self.assertIsNone(parse_config_image(bytes(image)))
 
     def test_universal_hex_does_not_overlap_config_page(self) -> None:
         validate_firmware_image(
@@ -250,6 +275,32 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(counts["nodes"], 0)
         self.assertEqual(counts["measurements"], 0)
 
+    def test_receiver_firmware_is_cached_from_status_and_query_response(self) -> None:
+        self.assertTrue(
+            self.ingest(
+                {
+                    "v": 1,
+                    "type": "status",
+                    "uptime_ms": 5000,
+                    "radio_state": "rx",
+                    "fw": "0.6.0",
+                }
+            )
+        )
+        self.assertEqual(self.service.snapshot()["firmware_version"], "0.6.0")
+
+        self.assertTrue(
+            self.ingest(
+                {
+                    "v": 1,
+                    "type": "hello",
+                    "device": "mycologger-receiver",
+                    "fw": "0.6.1",
+                }
+            )
+        )
+        self.assertEqual(self.service.snapshot()["firmware_version"], "0.6.1")
+
     def test_sensor_packet_creates_node_and_measurement(self) -> None:
         self.assertTrue(self.ingest(sensor_record()))
         counts = get_counts(self.database_path)
@@ -309,11 +360,42 @@ class IngestionTests(unittest.TestCase):
             )
         )
 
+        explicit = reserve_node_id(
+            self.database_path,
+            hardware_uid=uid_a,
+            reservation_token="d" * 32,
+            requested_node_id=7,
+            ttl_seconds=300,
+        )
+        self.assertEqual(explicit["node_id"], 7)
+        renumbered = complete_node_provisioning(
+            self.database_path,
+            reservation_token="d" * 32,
+            hardware_uid=uid_a,
+        )
+        self.assertEqual(renumbered["node_id"], 7)
+        with self.assertRaisesRegex(ValueError, "already in use or reserved"):
+            reserve_node_id(
+                self.database_path,
+                hardware_uid=uid_b,
+                reservation_token="e" * 32,
+                requested_node_id=7,
+                ttl_seconds=300,
+            )
+
     def test_battery_voltage_is_stored_and_exposed(self) -> None:
         self.assertTrue(self.ingest(sensor_record(battery_mv=3987)))
         node = get_nodes(self.database_path)[0]
         self.assertEqual(node["battery_mv"], 3987)
         self.assertEqual(node["battery_voltage_v"], 3.987)
+
+    def test_transmitter_firmware_is_cached_on_node(self) -> None:
+        self.assertTrue(
+            self.ingest(sensor_record(firmware_version=(0, 6, 0)))
+        )
+        node = get_nodes(self.database_path)[0]
+        self.assertEqual(node["firmware_version"], "0.6.0")
+        self.assertIsNotNone(node["firmware_updated_utc"])
 
     def test_uplink_restores_device_config_after_database_replacement(self) -> None:
         self.assertTrue(

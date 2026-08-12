@@ -37,7 +37,7 @@
 #define LINK_ACK_TURNAROUND_MS       30U
 
 #define PROTOCOL_VERSION             1U
-#define FIRMWARE_VERSION       "0.5.0"
+#define FIRMWARE_VERSION       "0.6.0"
 
 /* USER CODE END PD */
 
@@ -67,6 +67,7 @@ static void USB_ReportStatus(uint32_t uptime_ms,
                              uint8_t radio_status);
 static void USB_ReportRadioInit(SX1262Status init_status,
                                 uint8_t radio_status);
+static void USB_ReportIdentity(void);
 static void USB_ReportPacket(const SX1262Packet *packet,
                              uint32_t sequence);
 static uint8_t Packet_GetNodeId(const SX1262Packet *packet,
@@ -164,6 +165,15 @@ static char *Append_Text(char *destination, const char *text)
     return destination + length;
 }
 
+static void USB_ReportIdentity(void)
+{
+    USB_Print(
+        "{\"v\":1,\"type\":\"hello\","
+        "\"device\":\"mycologger-receiver\","
+        "\"fw\":\"" FIRMWARE_VERSION "\","
+        "\"transport\":\"usb-cdc-acm\"}\n");
+}
+
 /**
   * @brief Emit one machine-readable receiver status record.
   *
@@ -180,6 +190,8 @@ static void USB_ReportStatus(uint32_t uptime_ms,
     char *cursor = message;
     static const char prefix[] =
         "{\"v\":1,\"type\":\"status\",\"uptime_ms\":";
+    static const char firmware_field[] =
+        ",\"fw\":\"" FIRMWARE_VERSION "\"";
     static const char busy_field[] = ",\"radio_busy\":";
     static const char button_field[] = ",\"button_pressed\":";
     static const char radio_state_field[] = ",\"radio_state\":\"";
@@ -189,6 +201,9 @@ static void USB_ReportStatus(uint32_t uptime_ms,
     memcpy(cursor, prefix, sizeof(prefix) - 1U);
     cursor += sizeof(prefix) - 1U;
     cursor = Append_U32(cursor, uptime_ms);
+
+    memcpy(cursor, firmware_field, sizeof(firmware_field) - 1U);
+    cursor += sizeof(firmware_field) - 1U;
 
     memcpy(cursor, busy_field, sizeof(busy_field) - 1U);
     cursor += sizeof(busy_field) - 1U;
@@ -429,11 +444,7 @@ int main(void)
      */
     HAL_Delay(USB_STARTUP_DELAY_MS);
 
-    USB_Print(
-        "{\"v\":1,\"type\":\"hello\","
-        "\"device\":\"mycologger-receiver\","
-        "\"fw\":\"" FIRMWARE_VERSION "\","
-        "\"transport\":\"usb-cdc-acm\"}\n");
+    USB_ReportIdentity();
 
     USB_ReportRadioInit(radio_init_status, radio_status);
 
@@ -453,6 +464,11 @@ int main(void)
     while (1)
     {
         now = HAL_GetTick();
+
+        if (MycoCommand_TakeInfoRequest())
+        {
+            USB_ReportIdentity();
+        }
 
         if ((radio_init_status == SX1262_STATUS_OK) &&
             ((now - radio_poll_timer) >= RADIO_POLL_TIME_MS))

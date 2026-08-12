@@ -24,8 +24,10 @@ Maintenance rules:
         automatic self-calibration will regularly see fresh outdoor air.
   - [ ] Add configurable temperature compensation/offset.
 - [ ] Add an independent watchdog to both transmitter and receiver firmware.
-- [ ] Report transmitter boot count, reset cause, firmware version, sensor
-      failure count, and radio failure count.
+- [ ] Report transmitter diagnostics.
+  - [x] ~~Report and cache transmitter firmware version.~~
+  - [ ] Report boot count and reset cause.
+  - [ ] Report sensor and radio failure counts.
 - [ ] Make persistent transmitter configuration resilient to power loss.
   - [ ] Use two flash records/pages with generation counters and checksums.
   - [ ] Write and verify a new record before retiring the previous record.
@@ -80,8 +82,9 @@ Maintenance rules:
   - [ ] Configuration stuck in queued/sent state.
   - [ ] Excessive packet loss.
   - [ ] Temperature, humidity, or CO2 outside user-defined limits.
-- [ ] Add firmware version, reset cause, link quality, packet delivery, and
-      battery trend to each node detail view.
+- [ ] Expand node detail diagnostics.
+  - [x] ~~Show cached transmitter firmware version.~~
+  - [ ] Add reset cause, link quality, packet delivery, and battery trend.
 - [ ] Add calibration history and maintenance notes for each sensor node.
 - [ ] Add CSV/JSON export for measurements and grow records.
 - [ ] Add database retention/downsampling rules if long-term raw data growth
@@ -149,6 +152,8 @@ Maintenance rules:
 - [x] ~~Web dashboard shows nodes, tubs, jars, graphs, notes, and photos with captured conditions.~~
 - [x] ~~Report interval can be changed through the receiver and acknowledged by the transmitter.~~
 - [x] ~~Universal firmware and the ST-LINK provisioner assign permanent node IDs using MCU UIDs and server reservations.~~
+- [x] ~~Flash utility preserves known UID assignments, supports explicit safe renumbering, and verifies the reserved configuration.~~
+- [x] ~~Receiver and transmitter firmware versions are queryable/reported, cached, and displayed by the server.~~
 - [x] ~~The transmitter debug button requests a fresh reading and identifies the node.~~
 - [x] ~~Transmitter and receiver implement a bounded power-on link confirmation.~~
 - [x] ~~Automatic transmissions do not unnecessarily illuminate the transmitter debug LED.~~

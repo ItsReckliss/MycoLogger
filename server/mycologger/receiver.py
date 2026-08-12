@@ -38,6 +38,7 @@ class ReceiverState:
     radio_state: str | None = None
     radio_model: str | None = None
     frequency_hz: int | None = None
+    firmware_version: str | None = None
     last_record_utc: str | None = None
     last_packet_utc: str | None = None
     records_received: int = 0
@@ -164,6 +165,9 @@ class ReceiverService:
                         message="Receiver connected; waiting for data",
                         last_error=None,
                     )
+                    # v0.6+ answers immediately; older receiver firmware
+                    # safely ignores this backward-compatible query.
+                    receiver.write(b"INFO\n")
                     while not self._stop_event.is_set():
                         raw_line = receiver.readline()
                         if raw_line:
@@ -204,7 +208,13 @@ class ReceiverService:
         )
 
         if record_type == "status":
-            self._set_state(radio_state=record.get("radio_state"))
+            changes: dict[str, Any] = {"radio_state": record.get("radio_state")}
+            if record.get("fw"):
+                changes["firmware_version"] = record["fw"]
+            self._set_state(**changes)
+            return True
+        if record_type == "hello":
+            self._set_state(firmware_version=record.get("fw"))
             return True
         if record_type == "radio":
             self._set_state(

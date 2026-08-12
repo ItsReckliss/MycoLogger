@@ -126,12 +126,15 @@ records or photos.
 
 ## Transmitter provisioning
 
-All transmitters use the same universal firmware. A blank configuration page
-boots as silent Node 0 and produces four repeating LED flashes. The local
-`tools/provision_transmitter.py` utility reads the STM32's immutable 96-bit UID
-through ST-LINK, asks this server to reserve the lowest free node ID, flashes
-and verifies the universal application and node configuration, then completes
-the UID-to-node registration before resetting the MCU.
+All transmitters can use the same universal firmware. A blank configuration
+page boots as silent Node 0 and produces four repeating LED flashes. The local
+`tools/provision_transmitter.py` flash utility reads the STM32's immutable
+96-bit UID and current configuration through ST-LINK. Automatic mode keeps the
+registered ID for a known UID and allocates the lowest free ID for new hardware.
+An explicit free ID deliberately assigns or renumbers the transmitter; an
+occupied ID fails instead of silently falling back. The selected application
+and resulting configuration are both written and verified before registration
+is completed and the MCU is reset.
 
 Provisioning reservations last five minutes. IDs already present in the nodes
 table, permanently registered to another hardware UID, or actively reserved by

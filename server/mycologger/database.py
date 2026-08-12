@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS nodes (
     config_revision             INTEGER NOT NULL DEFAULT 0,
     applied_config_revision     INTEGER NOT NULL DEFAULT 0,
     last_config_transaction_id  INTEGER,
-    last_config_status          TEXT
+    last_config_status          TEXT,
+    firmware_version           TEXT,
+    firmware_updated_utc       TEXT
 )
 """
 
@@ -257,6 +259,8 @@ def _migrate_nodes(connection: sqlite3.Connection) -> None:
         "applied_config_revision": "INTEGER NOT NULL DEFAULT 0",
         "last_config_transaction_id": "INTEGER",
         "last_config_status": "TEXT",
+        "firmware_version": "TEXT",
+        "firmware_updated_utc": "TEXT",
     }
     for name, declaration in additions.items():
         if name not in columns:
@@ -521,8 +525,9 @@ def store_packet(
                     node_id, name, first_seen_utc, last_seen_utc,
                     last_sequence, last_uptime_s, boot_session, packet_count,
                     last_rssi_dbm_x2, last_snr_db_quarters,
-                    sensor_valid, sensor_error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                    sensor_valid, sensor_error, firmware_version,
+                    firmware_updated_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     node_id,
@@ -536,6 +541,8 @@ def store_packet(
                     radio_record.get("snr_db_quarters"),
                     int(sensor_valid),
                     sensor_error,
+                    decoded.get("firmware_version"),
+                    received_utc if decoded.get("firmware_version") else None,
                 ),
             )
         else:
@@ -566,7 +573,10 @@ def store_packet(
                     last_seen_utc = ?, last_sequence = ?, last_uptime_s = ?,
                     boot_session = ?, packet_count = packet_count + 1,
                     last_rssi_dbm_x2 = ?, last_snr_db_quarters = ?,
-                    sensor_valid = ?, sensor_error = ?
+                    sensor_valid = ?, sensor_error = ?,
+                    firmware_version = COALESCE(?, firmware_version),
+                    firmware_updated_utc = CASE WHEN ? IS NOT NULL
+                        THEN ? ELSE firmware_updated_utc END
                 WHERE node_id = ?
                 """,
                 (
@@ -578,6 +588,9 @@ def store_packet(
                     radio_record.get("snr_db_quarters"),
                     int(sensor_valid),
                     sensor_error,
+                    decoded.get("firmware_version"),
+                    decoded.get("firmware_version"),
+                    received_utc,
                     node_id,
                 ),
             )
@@ -630,6 +643,7 @@ NODE_QUERY = """
         n.desired_report_interval_s, n.applied_report_interval_s,
         n.config_revision, n.applied_config_revision,
         n.last_config_transaction_id, n.last_config_status,
+        n.firmware_version, n.firmware_updated_utc,
         m.co2_ppm, m.temperature_c, m.humidity_percent, m.battery_mv,
         t.tub_id, t.name AS tub_name,
         c.transaction_id AS pending_transaction_id,
@@ -1928,15 +1942,6 @@ def reserve_node_id(
             (hardware_uid,),
         ).fetchone()
         registered_node_id = int(registered["node_id"]) if registered else None
-        if (
-            registered_node_id is not None
-            and requested_node_id is not None
-            and requested_node_id != registered_node_id
-        ):
-            raise ValueError(
-                f"This hardware UID is already registered as Node {registered_node_id}"
-            )
-
         occupied = _occupied_node_ids(connection)
         if registered_node_id is not None:
             occupied.discard(registered_node_id)

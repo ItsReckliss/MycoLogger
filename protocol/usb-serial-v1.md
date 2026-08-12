@@ -20,15 +20,20 @@ flow control must be disabled.
 Example startup and status stream:
 
 ```json
-{"v":1,"type":"hello","device":"mycologger-receiver","fw":"0.2.1","transport":"usb-cdc-acm"}
+{"v":1,"type":"hello","device":"mycologger-receiver","fw":"0.6.0","transport":"usb-cdc-acm"}
 {"v":1,"type":"radio","state":"rx","model":"sx1262","frequency_hz":915000000,"modulation":"lora","sf":7,"bandwidth_hz":125000,"coding_rate":"4/5","sync_word":"private","tcxo_v":"1.8"}
-{"v":1,"type":"status","uptime_ms":5000,"radio_busy":false,"button_pressed":false,"radio_state":"rx"}
+{"v":1,"type":"status","uptime_ms":5000,"fw":"0.6.0","radio_busy":false,"button_pressed":false,"radio_state":"rx"}
 ```
 
-The recurring status record always includes `radio_state`, so a host which opens
+The recurring status record always includes `fw` and `radio_state`, so a host which opens
 the port after the one-time startup records can still confirm radio
 initialization. If initialization failed, the status instead includes
 `radio_state:"error"`, `radio_error_code`, and `radio_status_raw`.
+
+The host may write the ASCII line `INFO\n` or `VERSION\n` at any time. Receiver
+v0.6.0 and later responds with a fresh `hello` record. The MycoLogger service
+queries on every serial connection and also caches `fw` from recurring status,
+so it does not depend on observing the receiver's original boot message.
 
 The receiver configures its SX1262 for continuous reception. Because this board
 does not connect the radio's DIO1 interrupt output, the firmware polls the SX1262

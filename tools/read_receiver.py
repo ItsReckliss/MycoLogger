@@ -88,6 +88,10 @@ def decode_radio_payload(record: dict) -> None:
             decoded["sensor_error"] = SCD41_ERRORS.get(
                 error_code, f"unknown_{error_code}"
             )
+        if len(payload) >= 39:
+            decoded["firmware_version"] = (
+                f"{payload[36]}.{payload[37]}.{payload[38]}"
+            )
 
     record["decoded"] = decoded
 
@@ -185,6 +189,7 @@ def main() -> int:
             with serial.Serial(port_name, 115200, timeout=2) as receiver:
                 print(f"Listening on {receiver.port}...", file=sys.stderr)
                 waiting_message_shown = False
+                receiver.write(b"INFO\n")
 
                 while True:
                     raw_line = receiver.readline()

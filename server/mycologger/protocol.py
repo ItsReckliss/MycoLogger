@@ -96,6 +96,10 @@ def decode_radio_payload(record: dict[str, Any]) -> dict[str, Any] | None:
                 battery_mv = int.from_bytes(payload[34:36], "big")
                 decoded["battery_mv"] = battery_mv
                 decoded["battery_voltage_v"] = battery_mv / 1000.0
+        if len(payload) >= 39:
+            decoded["firmware_version"] = (
+                f"{payload[36]}.{payload[37]}.{payload[38]}"
+            )
 
     return decoded
 

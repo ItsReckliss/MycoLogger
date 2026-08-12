@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Provision one MycoLogger transmitter through a locally attached ST-LINK."""
+"""Flash or provision one MycoLogger transmitter through an ST-LINK."""
 
 from __future__ import annotations
 
@@ -53,6 +53,9 @@ def build_config_image(
     node_id: int,
     report_interval_s: int,
     downlink_window_ms: int,
+    *,
+    revision: int = 0,
+    last_transaction_id: int = CONFIG_PROVISIONING_MARKER,
 ) -> bytes:
     if not 1 <= node_id <= 0xFFFFFFFE:
         raise ProvisioningError("Node ID must be between 1 and 4294967294")
@@ -66,11 +69,35 @@ def build_config_image(
         node_id,
         report_interval_s * 1000,
         downlink_window_ms,
-        0,
-        CONFIG_PROVISIONING_MARKER,
+        revision,
+        last_transaction_id,
     )
     body = struct.pack("<7I", *values)
     return body + struct.pack("<I", fnv1a32(body))
+
+
+def parse_config_image(image: bytes) -> dict[str, int] | None:
+    """Decode a valid reserved-page record without trusting erased flash."""
+    if len(image) != CONFIG_SIZE:
+        return None
+    values = struct.unpack("<8I", image)
+    if (
+        values[0] != CONFIG_MAGIC
+        or values[1] != CONFIG_LAYOUT_VERSION
+        or not 1 <= values[2] <= 0xFFFFFFFE
+        or values[3] % 1000 != 0
+        or not 15 <= values[3] // 1000 <= 604800
+        or not 100 <= values[4] <= 60000
+        or values[7] != fnv1a32(image[:28])
+    ):
+        return None
+    return {
+        "node_id": values[2],
+        "report_interval_s": values[3] // 1000,
+        "downlink_window_ms": values[4],
+        "revision": values[5],
+        "last_transaction_id": values[6],
+    }
 
 
 def validate_firmware_image(path: Path) -> None:
@@ -271,6 +298,13 @@ class STM32Programmer:
         self.log("Rolling the transmitter back to silent/unprovisioned state...")
         self.run("-halt", "-e", str(CONFIG_PAGE), "-rst", timeout=60)
 
+    def restore_config(self, config: bytes) -> None:
+        self.log("Restoring the transmitter's previous node configuration...")
+        with tempfile.TemporaryDirectory(prefix="mycologger-restore-") as directory:
+            config_path = Path(directory) / "node-config.bin"
+            config_path.write_bytes(config)
+            self.run("-halt", "-w", str(config_path), hex(CONFIG_ADDRESS), "-v", timeout=90)
+
     def reset(self) -> None:
         self.run("-rst", timeout=30)
 
@@ -284,6 +318,7 @@ def provision(
     report_interval_s: int,
     downlink_window_ms: int,
     probe_serial: str | None,
+    preserve_existing_config: bool = True,
     log: Callable[[str], None] = print,
 ) -> dict[str, object]:
     validate_firmware_image(firmware)
@@ -292,6 +327,14 @@ def provision(
     )
     hardware_uid = programmer.read_hardware_uid()
     log(f"Detected transmitter UID: {hardware_uid}")
+    existing_config_image = programmer.read_memory(CONFIG_ADDRESS, CONFIG_SIZE)
+    existing_config = parse_config_image(existing_config_image)
+    if existing_config is not None:
+        log(
+            "Detected existing Node "
+            f"{existing_config['node_id']} configuration "
+            f"({existing_config['report_interval_s']} s interval)."
+        )
     status = api_request(
         server,
         "GET",
@@ -301,9 +344,23 @@ def provision(
     registered = status.get("registered")
     if isinstance(registered, dict):
         log(f"This transmitter is already registered as Node {registered['node_id']}.")
+        if (
+            existing_config is not None
+            and existing_config["node_id"] != int(registered["node_id"])
+        ):
+            raise ProvisioningError(
+                f"Hardware contains Node {existing_config['node_id']}, but UID "
+                f"{hardware_uid} is registered as Node {registered['node_id']}. "
+                "Resolve this identity conflict before flashing."
+            )
     payload: dict[str, object] = {"hardware_uid": hardware_uid}
-    if requested_node_id is not None:
-        payload["requested_node_id"] = requested_node_id
+    effective_node_id = (
+        requested_node_id
+        if requested_node_id is not None
+        else (existing_config["node_id"] if existing_config is not None else None)
+    )
+    if effective_node_id is not None:
+        payload["requested_node_id"] = effective_node_id
     reservation_response = api_request(
         server, "POST", "/api/provisioning/reservations", payload
     )
@@ -313,11 +370,55 @@ def provision(
     token = str(reservation["reservation_token"])
     node_id = int(reservation["node_id"])
     log(f"Reserved Node {node_id} until {reservation['expires_utc']}.")
-    config = build_config_image(node_id, report_interval_s, downlink_window_ms)
-    wrote_config = False
+    identity_changed = (
+        existing_config is not None and existing_config["node_id"] != node_id
+    )
+    if existing_config is not None and preserve_existing_config and not identity_changed:
+        config = existing_config_image
+        report_interval_s = existing_config["report_interval_s"]
+        downlink_window_ms = existing_config["downlink_window_ms"]
+        log("Keeping the existing node ID and device parameters.")
+    elif existing_config is not None and identity_changed:
+        config = build_config_image(
+            node_id,
+            (existing_config["report_interval_s"]
+             if preserve_existing_config else report_interval_s),
+            (existing_config["downlink_window_ms"]
+             if preserve_existing_config else downlink_window_ms),
+        )
+        report_interval_s = (
+            existing_config["report_interval_s"]
+            if preserve_existing_config else report_interval_s
+        )
+        downlink_window_ms = (
+            existing_config["downlink_window_ms"]
+            if preserve_existing_config else downlink_window_ms
+        )
+        log(
+            f"Explicitly renumbering Node {existing_config['node_id']} to "
+            f"Node {node_id}; other device parameters are "
+            f"{'preserved' if preserve_existing_config else 'replaced'}."
+        )
+    elif existing_config is not None:
+        changed = (
+            report_interval_s != existing_config["report_interval_s"]
+            or downlink_window_ms != existing_config["downlink_window_ms"]
+        )
+        config = build_config_image(
+            node_id,
+            report_interval_s,
+            downlink_window_ms,
+            revision=existing_config["revision"] + (1 if changed else 0),
+            last_transaction_id=existing_config["last_transaction_id"],
+        )
+        log("Keeping the existing node ID and applying the entered parameters.")
+    else:
+        config = build_config_image(node_id, report_interval_s, downlink_window_ms)
+    flash_attempted = False
+    registration_completed = False
     try:
+        flash_attempted = True
         programmer.flash_and_verify(firmware, config)
-        wrote_config = True
         log("Registering the verified transmitter with the MycoLogger server...")
         completed = api_request(
             server,
@@ -325,8 +426,9 @@ def provision(
             "/api/provisioning/complete",
             {"hardware_uid": hardware_uid, "reservation_token": token},
         )
+        registration_completed = True
         programmer.reset()
-        log(f"Provisioning complete. The transmitter is now Node {node_id}.")
+        log(f"Flash complete. The transmitter is Node {node_id}.")
         return {
             "hardware_uid": hardware_uid,
             "node_id": node_id,
@@ -335,20 +437,24 @@ def provision(
             "registration": completed.get("transmitter"),
         }
     except Exception:
-        if wrote_config:
+        if flash_attempted and not registration_completed:
             try:
-                programmer.rollback_unprovisioned()
+                if existing_config is not None:
+                    programmer.restore_config(existing_config_image)
+                else:
+                    programmer.rollback_unprovisioned()
             except Exception as rollback_error:
                 log(f"WARNING: automatic hardware rollback failed: {rollback_error}")
-        try:
-            api_request(
-                server,
-                "POST",
-                "/api/provisioning/cancel",
-                {"hardware_uid": hardware_uid, "reservation_token": token},
-            )
-        except Exception as cancel_error:
-            log(f"WARNING: reservation cancellation failed: {cancel_error}")
+        if not registration_completed:
+            try:
+                api_request(
+                    server,
+                    "POST",
+                    "/api/provisioning/cancel",
+                    {"hardware_uid": hardware_uid, "reservation_token": token},
+                )
+            except Exception as cancel_error:
+                log(f"WARNING: reservation cancellation failed: {cancel_error}")
         raise
 
 
@@ -362,6 +468,7 @@ def cli_main(arguments: argparse.Namespace) -> int:
         requested_node_id=requested,
         report_interval_s=arguments.report_interval,
         downlink_window_ms=arguments.downlink_window,
+        preserve_existing_config=arguments.keep_existing_config,
         probe_serial=arguments.probe_serial,
     )
     print(json.dumps(result, indent=2))
@@ -373,7 +480,7 @@ def gui_main(arguments: argparse.Namespace) -> int:
     from tkinter import filedialog, messagebox, ttk
 
     root = tk.Tk()
-    root.title("MycoLogger Transmitter Provisioner")
+    root.title("MycoLogger Transmitter Flash Utility")
     root.geometry("760x590")
     root.minsize(680, 520)
 
@@ -384,7 +491,8 @@ def gui_main(arguments: argparse.Namespace) -> int:
     interval = tk.StringVar(value=str(arguments.report_interval))
     downlink = tk.StringVar(value=str(arguments.downlink_window))
     probe_serial = tk.StringVar(value=arguments.probe_serial or "")
-    status = tk.StringVar(value="Connect an ST-LINK and powered transmitter, then provision.")
+    keep_existing = tk.BooleanVar(value=True)
+    status = tk.StringVar(value="Connect an ST-LINK and powered transmitter, then flash.")
 
     outer = ttk.Frame(root, padding=16)
     outer.pack(fill="both", expand=True)
@@ -397,7 +505,7 @@ def gui_main(arguments: argparse.Namespace) -> int:
         return entry
 
     row("MycoLogger server", server, 0)
-    firmware_entry = row("Universal firmware", firmware, 1)
+    firmware_entry = row("Firmware image", firmware, 1)
     ttk.Button(
         outer,
         text="Browse",
@@ -414,13 +522,18 @@ def gui_main(arguments: argparse.Namespace) -> int:
     node_entry.configure(validate="none")
     row("Report interval (seconds)", interval, 5)
     row("Downlink window (ms)", downlink, 6)
+    ttk.Checkbutton(
+        outer,
+        text="Keep existing device parameters (Automatic retains node ID)",
+        variable=keep_existing,
+    ).grid(row=7, column=0, columnspan=3, sticky="w", pady=(6, 2))
 
     ttk.Label(outer, textvariable=status).grid(
-        row=7, column=0, columnspan=3, sticky="w", pady=(12, 6)
+        row=8, column=0, columnspan=3, sticky="w", pady=(12, 6)
     )
     log_box = tk.Text(outer, height=15, wrap="word", state="disabled")
-    log_box.grid(row=8, column=0, columnspan=3, sticky="nsew")
-    outer.rowconfigure(8, weight=1)
+    log_box.grid(row=9, column=0, columnspan=3, sticky="nsew")
+    outer.rowconfigure(9, weight=1)
 
     def append_log(message: str) -> None:
         def update() -> None:
@@ -449,28 +562,29 @@ def gui_main(arguments: argparse.Namespace) -> int:
                     requested_node_id=requested,
                     report_interval_s=int(interval.get()),
                     downlink_window_ms=int(downlink.get()),
+                    preserve_existing_config=keep_existing.get(),
                     probe_serial=probe_serial.get().strip() or None,
                     log=append_log,
                 )
                 root.after(
                     0,
                     lambda: messagebox.showinfo(
-                        "Provisioning complete",
+                        "Flash complete",
                         f"Transmitter {result['hardware_uid']} is now Node {result['node_id']}.",
                     ),
                 )
             except Exception as exc:
                 append_log(f"ERROR: {exc}")
-                root.after(0, lambda: messagebox.showerror("Provisioning failed", str(exc)))
+                root.after(0, lambda: messagebox.showerror("Flash failed", str(exc)))
             finally:
                 root.after(0, lambda: provision_button.configure(state="normal"))
 
         threading.Thread(target=worker, daemon=True).start()
 
     provision_button = ttk.Button(
-        outer, text="Provision transmitter", command=run_provisioning
+        outer, text="Flash transmitter", command=run_provisioning
     )
-    provision_button.grid(row=9, column=0, columnspan=3, sticky="e", pady=(12, 0))
+    provision_button.grid(row=10, column=0, columnspan=3, sticky="e", pady=(12, 0))
     firmware_entry.focus_set()
     root.mainloop()
     return 0
@@ -485,6 +599,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--node-id", type=int, help="Specific node ID; omit for automatic")
     parser.add_argument("--report-interval", type=int, default=900)
     parser.add_argument("--downlink-window", type=int, default=1500)
+    parser.add_argument(
+        "--replace-existing-config",
+        dest="keep_existing_config",
+        action="store_false",
+        help="Apply entered parameters; Automatic still retains a known UID's node ID",
+    )
+    parser.set_defaults(keep_existing_config=True)
     parser.add_argument("--cli", action="store_true", help="Run without the graphical interface")
     return parser
 

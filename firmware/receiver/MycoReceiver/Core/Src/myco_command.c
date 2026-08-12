@@ -7,6 +7,24 @@ static char command_line[COMMAND_LINE_SIZE];
 static uint8_t command_line_length;
 static MycoDownlinkCommand pending_command;
 static volatile uint8_t command_ready;
+static volatile uint8_t info_request_ready;
+
+static bool IsInfoRequest(void)
+{
+    return ((command_line_length == 4U) &&
+            (command_line[0] == 'I') &&
+            (command_line[1] == 'N') &&
+            (command_line[2] == 'F') &&
+            (command_line[3] == 'O')) ||
+           ((command_line_length == 7U) &&
+            (command_line[0] == 'V') &&
+            (command_line[1] == 'E') &&
+            (command_line[2] == 'R') &&
+            (command_line[3] == 'S') &&
+            (command_line[4] == 'I') &&
+            (command_line[5] == 'O') &&
+            (command_line[6] == 'N'));
+}
 
 static bool ParseU32(const char **cursor, uint32_t *value)
 {
@@ -75,7 +93,11 @@ void MycoCommand_USBReceive(const uint8_t *data, uint32_t length)
             {
                 MycoDownlinkCommand parsed;
                 command_line[command_line_length] = '\0';
-                if (ParseCommandLine(&parsed))
+                if (IsInfoRequest())
+                {
+                    info_request_ready = 1U;
+                }
+                else if (ParseCommandLine(&parsed))
                 {
                     pending_command = parsed;
                     __DMB();
@@ -94,6 +116,33 @@ void MycoCommand_USBReceive(const uint8_t *data, uint32_t length)
             command_line_length = 0U;
         }
     }
+}
+
+bool MycoCommand_TakeInfoRequest(void)
+{
+    uint32_t interrupt_state;
+
+    if (info_request_ready == 0U)
+    {
+        return false;
+    }
+
+    interrupt_state = __get_PRIMASK();
+    __disable_irq();
+    if (info_request_ready == 0U)
+    {
+        if (interrupt_state == 0U)
+        {
+            __enable_irq();
+        }
+        return false;
+    }
+    info_request_ready = 0U;
+    if (interrupt_state == 0U)
+    {
+        __enable_irq();
+    }
+    return true;
 }
 
 bool MycoCommand_Take(MycoDownlinkCommand *command)

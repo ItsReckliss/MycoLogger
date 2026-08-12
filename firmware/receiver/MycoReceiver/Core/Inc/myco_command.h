@@ -25,6 +25,9 @@ bool MycoCommand_Take(MycoDownlinkCommand *command);
 bool MycoCommand_TakeForNode(uint32_t node_id,
                             MycoDownlinkCommand *command);
 
+/** Return true once for each INFO or VERSION line received over USB. */
+bool MycoCommand_TakeInfoRequest(void);
+
 /** Build the compact LoRa configuration payload. */
 void MycoCommand_BuildPacket(const MycoDownlinkCommand *command,
                              uint8_t packet[MYCO_CONFIG_PACKET_SIZE]);
