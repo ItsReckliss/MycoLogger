@@ -17,6 +17,11 @@ Maintenance rules:
 - [ ] Add account authentication and authorization.
   - [ ] Support multiple accounts with distinct credentials and roles.
   - [ ] Add login input, logout control, and a secure “keep me logged in” session option.
+  - [ ] Give each account isolated grows, jars, photos, and node ownership in
+        the server database using immutable account IDs, not usernames flashed
+        into transmitters.
+  - [ ] Add authenticated node claiming/transfer; do not treat an unauthenticated
+        radio username as proof of account ownership.
   - [ ] Restrict the server-shutdown action to authorized administrators.
 
 - [x] ~~Finish validating corrected transmitter battery-voltage reporting.~~

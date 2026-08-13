@@ -270,12 +270,13 @@ Implemented dashboard/data features include:
   associated with the nearest grow measurement;
 - node/tub assignment history so reusing a sensor does not relabel old data.
 
-The top-right Account menu currently provides local UI placeholders for future
-username/password login and “Keep me logged in” support. Its **Save & shut down
-server** control is functional: after confirmation it requests a graceful
-server stop, including orderly receiver-service shutdown. It is intentionally
-unauthenticated only while this is a local development deployment; production
-use must wait for the planned account authorization work in `TO-DO.md`.
+The top-right Account menu identifies the current local deployment as **MycoPi
+Admin** and provides UI placeholders for future username/password login and
+“Keep me logged in” support. Its **Save & shut down server** control is
+functional: after confirmation it requests a graceful server stop, including
+orderly receiver-service shutdown. It is intentionally unauthenticated only
+while this is a local development deployment; production use must wait for the
+planned account authorization work in `TO-DO.md`.
 
 Server-specific setup, environment variables, persistent-data paths, and Pi
 layout are documented in [server/README.md](server/README.md).
