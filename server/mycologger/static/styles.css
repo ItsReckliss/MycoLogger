@@ -251,7 +251,7 @@ textarea:focus { border-color: var(--accent); }
 .stage-badge.fruiting, .stage-badge.harvesting { color: #d6e8b0; border-color: #63804c; background: #21331c; }
 .stage-badge.complete, .stage-badge.paused { color: #b2beb4; border-color: #4c5b50; background: #202721; }
 .stage-badge.failed { color: #efb2aa; border-color: #75453f; background: #351f1d; }
-.grow-chart { position: relative; height: 165px; margin: 0 13px; overflow: hidden; border: 1px solid #2e513d; border-radius: 3px; background: #0d1b15; }
+.grow-chart { position: relative; height: 165px; margin: 0 13px; overflow: hidden; border: 1px solid #2e513d; border-radius: 3px; background: #0d1b15; touch-action: pan-y; }
 .grow-range-selector { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 13px 9px; }
 .grow-range-label { margin-right: 3px; color: #a8b9ab; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .grow-range-button { min-width: 38px; padding: 6px 8px; color: #aebdb1; border: 1px solid #3c614a; border-radius: 3px; background: #102219; cursor: pointer; font: inherit; font-size: 10px; font-weight: 600; }
@@ -264,6 +264,15 @@ textarea:focus { border-color: var(--accent); }
 .chart-scale-key .humidity { color: #77b9d1; }
 .chart-scale-key .co2 { color: #92c778; }
 .chart-time-scale { position: absolute; right: 6px; bottom: 3px; left: 6px; display: flex; justify-content: space-between; color: #718779; font-size: 7px; pointer-events: none; text-shadow: 0 1px 2px #07110c; }
+.chart-inspector { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.chart-inspector-line { position: absolute; top: 4px; bottom: 16px; border-left: 1px dashed rgba(234, 241, 216, .85); transform: translateX(-.5px); }
+.chart-inspector-tooltip { position: absolute; top: 4px; min-width: 114px; padding: 4px 5px; color: #e3eadf; border: 1px solid #54705a; border-radius: 3px; background: rgba(7, 17, 12, .92); box-shadow: 0 2px 7px rgba(0, 0, 0, .28); font-size: 8px; line-height: 1.35; transform: translateX(8px); white-space: nowrap; }
+.chart-inspector-tooltip.flip { transform: translateX(calc(-100% - 8px)); }
+.chart-inspector-tooltip strong { display: block; margin-bottom: 2px; color: #cbd8c8; font-size: 8px; }
+.chart-inspector-values { display: grid; gap: 1px; }
+.chart-inspector-values .temperature { color: #e0aa68; }
+.chart-inspector-values .humidity { color: #77b9d1; }
+.chart-inspector-values .co2 { color: #92c778; }
 .grow-chart .chart-band-separator { stroke: #294235; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .grow-chart .chart-average-line { stroke-width: 1; stroke-dasharray: 5 5; opacity: .7; vector-effect: non-scaling-stroke; }
 .grow-chart .temperature-average { stroke: #e0aa68; }

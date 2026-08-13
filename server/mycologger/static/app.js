@@ -465,6 +465,75 @@ function renderChart(container, history, rangeTitle = "selected time range", cac
   const lastTime = parseRecordedTime(history[history.length - 1].recorded_utc);
   timeScale.innerHTML = `<span>${firstTime.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span><span>${lastTime.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>`;
   container.append(timeScale);
+
+  const inspector = document.createElement("div");
+  inspector.className = "chart-inspector";
+  inspector.hidden = true;
+  const cursor = document.createElement("div");
+  cursor.className = "chart-inspector-line";
+  const tooltip = document.createElement("div");
+  tooltip.className = "chart-inspector-tooltip";
+  const inspectedTime = document.createElement("strong");
+  const inspectedValues = document.createElement("div");
+  inspectedValues.className = "chart-inspector-values";
+  tooltip.append(inspectedTime, inspectedValues);
+  inspector.append(cursor, tooltip);
+  container.append(inspector);
+
+  const formatInspectedValue = (value, metric) => {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return "—";
+    if (metric.key === "temperature_c" || metric.key === "humidity_percent") {
+      return `${numericValue.toFixed(1)}${metric.unit}`;
+    }
+    return `${Math.round(numericValue).toLocaleString()}${metric.unit}`;
+  };
+  const inspectAt = (clientX) => {
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const paddingPixels = (xPadding / width) * rect.width;
+    const graphWidth = Math.max(rect.width - (paddingPixels * 2), 1);
+    const graphX = Math.min(
+      Math.max(clientX - rect.left, paddingPixels),
+      rect.width - paddingPixels,
+    );
+    const fraction = (graphX - paddingPixels) / graphWidth;
+    const index = Math.round(fraction * Math.max(history.length - 1, 0));
+    const record = history[index];
+    cursor.style.left = `${graphX}px`;
+    tooltip.style.left = `${graphX}px`;
+    tooltip.classList.toggle("flip", graphX > rect.width * 0.6);
+    inspectedTime.textContent = parseRecordedTime(record.recorded_utc).toLocaleString([], {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    });
+    inspectedValues.replaceChildren(...activeMetrics.map((metric) => {
+      const value = document.createElement("span");
+      value.className = metric.className.replace("-line", "");
+      value.textContent = `${metric.name} ${formatInspectedValue(record[metric.key], metric)}`;
+      return value;
+    }));
+    inspector.hidden = false;
+  };
+  const hideInspector = () => { inspector.hidden = true; };
+
+  container.addEventListener("pointerenter", (event) => {
+    if (event.pointerType === "mouse") inspectAt(event.clientX);
+  });
+  container.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "mouse" || event.pointerType === "touch") inspectAt(event.clientX);
+  });
+  container.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse") hideInspector();
+  });
+  container.addEventListener("pointerdown", (event) => {
+    if (event.pointerType !== "mouse") inspectAt(event.clientX);
+    event.stopPropagation();
+  });
+  container.addEventListener("pointerup", (event) => {
+    if (event.pointerType !== "mouse") hideInspector();
+  });
+  container.addEventListener("pointercancel", hideInspector);
+  container.addEventListener("click", (event) => event.stopPropagation());
 }
 
 function makeGrowRangeSelector(tubId, activeHours) {
