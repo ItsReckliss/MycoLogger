@@ -6,6 +6,9 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
 from pathlib import Path
 import sqlite3
+import os
+import signal
+import threading
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -220,6 +223,13 @@ def health() -> dict[str, object]:
         "database_ready": settings.database_path.exists(),
         "receiver": receiver_service.snapshot(),
     }
+
+
+@app.post("/api/server/shutdown")
+def shutdown_server() -> dict[str, str]:
+    """Request Uvicorn's normal SIGINT shutdown after this response returns."""
+    threading.Timer(0.2, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
+    return {"status": "shutting_down"}
 
 
 @app.get("/api/dashboard")

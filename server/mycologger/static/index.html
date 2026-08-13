@@ -75,11 +75,22 @@
           </div>
           <div class="topbar-actions">
             <button class="icon-button" type="button" data-open-view="configuration" title="Settings" aria-label="Settings">⚙</button>
-            <button class="account-button" id="account-button" type="button">
-              <span class="avatar">A</span>
-              <span class="account-copy"><strong>Local admin</strong><small>mycopi</small></span>
-              <span>▾</span>
-            </button>
+            <div class="account-menu">
+              <button class="account-button" id="account-button" type="button" aria-expanded="false">
+                <span class="avatar">?</span>
+                <span class="account-copy"><strong>Account</strong><small>Not signed in</small></span>
+                <span>▾</span>
+              </button>
+              <div class="account-dropdown" id="account-dropdown" hidden>
+                <div class="account-login-fields">
+                  <label>Username<input id="login-username" autocomplete="username" placeholder="Username" /></label>
+                  <label>Password<input id="login-password" type="password" autocomplete="current-password" placeholder="Password" /></label>
+                  <label class="check-label"><input id="login-remember" type="checkbox" /> Keep me logged in</label>
+                  <button id="login-button" type="button">Sign in</button>
+                </div>
+                <button id="shutdown-server" type="button">Save &amp; shut down server</button>
+              </div>
+            </div>
           </div>
         </header>
 

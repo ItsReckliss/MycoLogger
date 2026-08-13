@@ -14,6 +14,11 @@ Maintenance rules:
 
 ## Priority 1 - Correctness and reliability
 
+- [ ] Add account authentication and authorization.
+  - [ ] Support multiple accounts with distinct credentials and roles.
+  - [ ] Add login input, logout control, and a secure “keep me logged in” session option.
+  - [ ] Restrict the server-shutdown action to authorized administrators.
+
 - [x] ~~Finish validating corrected transmitter battery-voltage reporting.~~
   - [x] ~~Verify the external divider: PA0 measures 1.8427 V, corresponding to
         approximately 3.6854 V at the battery.~~

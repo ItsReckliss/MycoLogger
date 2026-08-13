@@ -79,6 +79,10 @@ const ui = {
   settingsConfigStatus: document.querySelector("#settings-config-status"),
   settingsError: document.querySelector("#settings-error"),
   settingsSave: document.querySelector("#settings-save"),
+  accountButton: document.querySelector("#account-button"),
+  accountDropdown: document.querySelector("#account-dropdown"),
+  shutdownServer: document.querySelector("#shutdown-server"),
+  loginButton: document.querySelector("#login-button"),
   tubOptions: document.querySelector("#tub-options"),
   growDialog: document.querySelector("#grow-dialog"),
   growForm: document.querySelector("#grow-form"),
@@ -2057,6 +2061,23 @@ ui.archiveTabs.forEach((tab) => tab.addEventListener("click", () => {
 }));
 ui.openViewButtons.forEach((button) => button.addEventListener("click", () => showView(button.dataset.openView)));
 ui.menuButton.addEventListener("click", () => ui.sidebar.classList.toggle("open"));
+ui.accountButton.addEventListener("click", () => {
+  const open = ui.accountDropdown.hidden;
+  ui.accountDropdown.hidden = !open;
+  ui.accountButton.setAttribute("aria-expanded", String(open));
+});
+ui.shutdownServer.addEventListener("click", async () => {
+  if (!window.confirm("Save completed changes and shut down the MycoLogger server?")) return;
+  ui.shutdownServer.disabled = true;
+  try {
+    await fetch("/api/server/shutdown", { method: "POST" });
+    document.body.innerHTML = "<main class='empty-state'><strong>Server shut down safely.</strong><span>Start it again from PowerShell when ready.</span></main>";
+  } catch {
+    showToast("Could not request server shutdown.");
+    ui.shutdownServer.disabled = false;
+  }
+});
+ui.loginButton.addEventListener("click", () => showToast("Account login will be enabled with the planned authentication update."));
 ui.nodeFilter.addEventListener("input", renderNodes);
 ui.refreshButton.addEventListener("click", refreshDashboard);
 ui.diagnosticsRefresh.addEventListener("click", refreshDashboard);
