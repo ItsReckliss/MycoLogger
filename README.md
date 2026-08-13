@@ -81,6 +81,13 @@ with NSS before the next transmit or downlink receive window. Node 1 completed
 three 20-second post-flash reports with a zero radio-failure count; current
 draw still needs power-profiler measurement.
 
+The dashboard classifies reported battery voltage as dead at or below 3.35 V,
+critical through 3.50 V, low through 3.70 V, medium below 4.20 V, and full at
+or above 4.20 V. Battery fields use a thin colored lower accent; assigned tub
+cards show a warning `!` for low/critical/dead states, and Diagnostics reports
+the affected node. These server-side thresholds are intentionally fixed for now;
+making them per-account/per-node settings is a later configuration feature.
+
 Transmitter v0.8.6 enters STM32 Stop 2 only after radio/sensor/downlink/LED
 state is idle. LPTIM1 runs from the internal LSI at 1 kHz to wake scheduled
 reports, and PC14's falling-edge EXTI wakes an immediate manual measurement.

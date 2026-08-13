@@ -231,6 +231,28 @@ function formatBattery(value) {
   return volts < 1 ? `${Math.round(volts * 1000)} mV` : `${volts.toFixed(2)} V`;
 }
 
+const BATTERY_THRESHOLDS = Object.freeze({
+  dead: 3.35,
+  critical: 3.50,
+  low: 3.70,
+  medium: 4.00,
+  full: 4.20,
+});
+
+function batteryState(value) {
+  const volts = Number(value);
+  if (!Number.isFinite(volts)) return "unknown";
+  if (volts <= BATTERY_THRESHOLDS.dead) return "dead";
+  if (volts <= BATTERY_THRESHOLDS.critical) return "critical";
+  if (volts <= BATTERY_THRESHOLDS.low) return "low";
+  if (volts < BATTERY_THRESHOLDS.full) return "medium";
+  return "full";
+}
+
+function batteryStateLabel(state) {
+  return ({ dead: "Dead", critical: "Critical", low: "Low", medium: "Medium", full: "Full" })[state] || "Unknown";
+}
+
 function makeReading(value, label) {
   const container = document.createElement("div");
   const strong = document.createElement("strong");
@@ -469,9 +491,9 @@ function makeGrowRangeSelector(tubId, activeHours) {
   return selector;
 }
 
-function makeGrowReading(value, label) {
+function makeGrowReading(value, label, className = "") {
   const box = document.createElement("div");
-  box.className = "grow-card-reading";
+  box.className = `grow-card-reading ${className}`.trim();
   const strong = document.createElement("strong");
   const span = document.createElement("span");
   strong.textContent = value;
@@ -505,7 +527,16 @@ function makeGrowCard(grow) {
     : grow.archive_category === "past_grow"
       ? (grow.contaminated_on ? "contaminated after flush" : "finished")
       : grow.stage;
-  header.append(title, stage);
+  header.append(title);
+  const battery = batteryState(grow.battery_voltage_v);
+  if (["low", "critical", "dead"].includes(battery)) {
+    const alert = document.createElement("span");
+    alert.className = `battery-alert ${battery}`;
+    alert.textContent = "!";
+    alert.title = `Node battery ${batteryStateLabel(battery).toLowerCase()} (${formatBattery(grow.battery_voltage_v)})`;
+    header.append(alert);
+  }
+  header.append(stage);
 
   const activeHours = rangeForGrow(grow.tub_id);
   const range = rangeDefinition(activeHours);
@@ -523,7 +554,7 @@ function makeGrowCard(grow) {
   readings.append(
     makeGrowReading(formatReading(grow.temperature_c, " °C", 1), "Temperature"),
     makeGrowReading(formatReading(grow.humidity_percent, "%", 1), "Humidity"),
-    makeGrowReading(formatBattery(grow.battery_voltage_v), "Battery"),
+    makeGrowReading(formatBattery(grow.battery_voltage_v), `Battery · ${batteryStateLabel(battery)}`, `battery-${battery}`),
     makeGrowReading(formatReading(grow.co2_ppm, " ppm"), "CO₂"),
   );
 
@@ -796,7 +827,11 @@ function makeNodeRow(node) {
     makeReading(formatReading(node.co2_ppm, " ppm"), "CO₂"),
     makeReading(formatReading(node.temperature_c, " °C", 1), "Temperature"),
     makeReading(formatReading(node.humidity_percent, "%", 1), "Humidity"),
-    makeReading(formatBattery(node.battery_voltage_v), "Battery"),
+    (() => {
+      const reading = makeReading(formatBattery(node.battery_voltage_v), `Battery · ${batteryStateLabel(batteryState(node.battery_voltage_v))}`);
+      reading.className = `battery-reading battery-${batteryState(node.battery_voltage_v)}`;
+      return reading;
+    })(),
     makeReading(formatReading(node.rssi_dbm, " dBm", 1), "Signal"),
     settingsButton,
   );
@@ -2013,6 +2048,11 @@ function renderDiagnostics(receiver, nodes) {
     if (Number(node.sensor_failure_count) > 0) issues.push(["Node", `${label}: sensor failures`, `${node.sensor_failure_count} recoverable sensor failure${Number(node.sensor_failure_count) === 1 ? "" : "s"} since boot.`]);
     if (Number(node.radio_failure_count) > 0) issues.push(["Node", `${label}: radio failures`, `${node.radio_failure_count} local radio operation failure${Number(node.radio_failure_count) === 1 ? "" : "s"} since boot.`]);
     if ((Number(node.last_reset_flags) & 0x20000000) !== 0) issues.push(["Node", `${label}: watchdog reset`, `Latest reset flags: ${formatResetFlags(node.last_reset_flags)}.`]);
+    const battery = batteryState(node.battery_voltage_v);
+    if (["low", "critical", "dead"].includes(battery)) {
+      const action = battery === "dead" ? "replace or recharge immediately" : battery === "critical" ? "replace or recharge soon" : "plan a replacement or recharge";
+      issues.push(["Battery", `${label}: battery ${battery}`, `${formatBattery(node.battery_voltage_v)} — ${action}.`]);
+    }
   });
   ui.diagnosticsList.replaceChildren(...issues.map((issue) => makeDiagnostic(...issue)));
   ui.diagnosticsList.hidden = issues.length === 0;

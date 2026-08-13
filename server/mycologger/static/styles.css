@@ -115,6 +115,19 @@ button, a { color: inherit; }
 .node-row strong, .node-row span { display: block; }
 .node-row strong { font-size: 12px; }
 .node-row span { margin-top: 2px; color: var(--muted); font-size: 10px; }
+.battery-reading, .grow-card-reading { --battery-accent: #718779; }
+.battery-full { --battery-accent: #64b56f; }
+.battery-medium { --battery-accent: #9fbd62; }
+.battery-low { --battery-accent: #e1a74f; }
+.battery-critical { --battery-accent: #e16a48; }
+.battery-dead { --battery-accent: #e64d4d; }
+.battery-reading, .grow-card-reading.battery-full, .grow-card-reading.battery-medium, .grow-card-reading.battery-low, .grow-card-reading.battery-critical, .grow-card-reading.battery-dead { position: relative; }
+.battery-reading::after, .grow-card-reading.battery-full::after, .grow-card-reading.battery-medium::after, .grow-card-reading.battery-low::after, .grow-card-reading.battery-critical::after, .grow-card-reading.battery-dead::after { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; content: ""; background: var(--battery-accent); }
+.battery-dead::after { animation: battery-dead-pulse 1s steps(2, end) infinite; }
+.battery-alert { display: grid; width: 19px; height: 19px; margin-left: auto; place-items: center; color: #172215; border-radius: 50%; background: #e1a74f; font-size: 13px; font-weight: 800; line-height: 1; }
+.battery-alert.critical { background: #e16a48; }
+.battery-alert.dead { color: #fff; background: #e64d4d; animation: battery-dead-pulse 1s steps(2, end) infinite; }
+@keyframes battery-dead-pulse { 50% { opacity: .25; } }
 .empty-state { display: grid; min-height: 190px; place-content: center; text-align: center; }
 .empty-state strong { font-size: 13px; }
 .empty-state span { margin-top: 5px; color: var(--muted); font-size: 11px; }

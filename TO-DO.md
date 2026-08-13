@@ -113,6 +113,11 @@ Maintenance rules:
 - [ ] Recalculate expected battery life from measured energy per report instead
       of component typical values alone.
 - [ ] Add configurable low-battery and critical-battery thresholds.
+  - [x] ~~Show server-side battery status bands at 3.35 V dead, 3.50 V
+        critical, 3.70 V low, 4.00 V medium, and 4.20 V full.~~
+  - [ ] Add a transmitter low-voltage cutoff policy: stop sensor/radio work
+        below a verified safe Li-ion voltage while retaining infrequent battery
+        checks and recovery behavior.
 - [ ] Consider adaptive reporting at low battery.
 - [ ] For the next PCB revision, switch the high-value battery divider so it
       draws current only while the ADC is measuring.
