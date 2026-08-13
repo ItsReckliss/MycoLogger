@@ -27,8 +27,15 @@ Maintenance rules:
   - [x] ~~Calibrate the final result by 0.9992 against a simultaneous 3.752 V
         battery-lead measurement in transmitter v0.6.5.~~
 - [ ] Correct the SCD41 measurement strategy.
-  - [ ] Discard the first single-shot CO2 result after physically powering the
-        sensor on, as required for stabilization.
+  - [x] ~~Bench-compare the first and immediate second single-shot results
+        after one load-switch power cycle.~~ Node 1 measured 1847 ppm followed
+        by 1864 ppm (+17 ppm) five seconds later; keep collecting comparisons.
+  - [ ] Add remotely configurable `discard_first_single_shot` behavior, which
+        takes an unreported first result and transmits the immediate second one.
+  - [ ] Add remotely configurable downlink receive-window duration and tune its
+        minimum reliable value on the physical receiver/server path.
+  - [x] ~~Disable and persist SCD41 automatic self-calibration for the
+        power-cycled, high-CO2 tub deployment.~~
   - [ ] Use idle single-shot mode for shorter report intervals where it is more
         efficient than power cycling.
   - [ ] Use power-cycled single-shot mode only for sufficiently long intervals.

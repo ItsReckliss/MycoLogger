@@ -47,7 +47,10 @@ Last reviewed: 2026-08-13.
   its watchdog reset has been bench-tested, but the new boot-link configuration
   delivery behavior awaits a user-performed USB flash.
 - Node 1 reports transmitter firmware `0.8.2` and its original 60-second
-  interval after a real erased-page recovery test.
+  interval after a real erased-page recovery test. Its current test interval is
+  15 seconds. The SCD41's automatic self-calibration has been explicitly
+  disabled and persisted because tub operation will not provide regular fresh
+  air exposure.
 - The BTT Pi target is `mycopi.local`, but deployment of the current server as a
   managed Pi service is not complete.
 - Git remote: `https://github.com/ItsReckliss/MycoLogger.git`.
@@ -152,6 +155,13 @@ Normal behavior:
 The SCD41 power/conversion strategy is functional but not final. Stabilization,
 calibration, temperature offset, and the idle-versus-power-cycle threshold are
 Priority 1 work in the to-do list.
+
+On 2026-08-13, a direct power-cycle comparison reported 1847 ppm / 25.42 C /
+36.87 %RH for the first single shot, then 1864 ppm / 25.57 C / 36.88 %RH for a
+second single shot begun immediately while the load switch remained on. The
+17 ppm CO2 difference does not justify permanently discarding the first result
+on this board yet; retain a configurable test option while more conditions are
+sampled.
 
 ### Receiver
 
