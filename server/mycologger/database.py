@@ -1039,16 +1039,6 @@ def _grow_history(
     hours: int,
 ) -> list[dict[str, Any]]:
     lower_bound = datetime.now(UTC) - timedelta(hours=hours)
-    if hours <= 1:
-        bucket_seconds = 300
-    elif hours <= 24:
-        bucket_seconds = 1800
-    elif hours <= 72:
-        bucket_seconds = 3600
-    elif hours <= 168:
-        bucket_seconds = 10800
-    else:
-        bucket_seconds = 43200
     try:
         assigned = datetime.fromisoformat(assigned_utc)
         if assigned.tzinfo is None:
@@ -1060,22 +1050,15 @@ def _grow_history(
     rows = connection.execute(
         """
         SELECT
-            datetime(
-                (CAST(strftime('%s', received_utc) AS INTEGER) / ?) * ?,
-                'unixepoch'
-            ) AS recorded_utc,
-            ROUND(AVG(co2_ppm), 1) AS co2_ppm,
-            ROUND(AVG(temperature_c), 2) AS temperature_c,
-            ROUND(AVG(humidity_percent), 2) AS humidity_percent
+            received_utc AS recorded_utc,
+            co2_ppm,
+            temperature_c,
+            humidity_percent
         FROM measurements
         WHERE node_id = ? AND tub_id = ? AND received_utc >= ? AND sensor_valid = 1
-        GROUP BY (CAST(strftime('%s', received_utc) AS INTEGER) / ?)
-        ORDER BY recorded_utc
+        ORDER BY received_utc, id
         """,
-        (
-            bucket_seconds, bucket_seconds, node_id, tub_id,
-            lower_bound.isoformat(), bucket_seconds,
-        ),
+        (node_id, tub_id, lower_bound.isoformat()),
     ).fetchall()
     return [dict(row) for row in rows if row["recorded_utc"] is not None]
 

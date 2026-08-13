@@ -88,6 +88,11 @@ cards show a warning `!` for low/critical/dead states, and Diagnostics reports
 the affected node. These server-side thresholds are intentionally fixed for now;
 making them per-account/per-node settings is a later configuration feature.
 
+Grow charts retain every valid stored measurement in the selected time range;
+they do not bucket or average readings for display. This is practical at the
+normal five-minute-or-longer reporting cadence and keeps short-interval bench
+test data available for inspection.
+
 Transmitter v0.8.6 enters STM32 Stop 2 only after radio/sensor/downlink/LED
 state is idle. LPTIM1 runs from the internal LSI at 1 kHz to wake scheduled
 reports, and PC14's falling-edge EXTI wakes an immediate manual measurement.

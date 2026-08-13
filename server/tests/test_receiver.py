@@ -596,6 +596,7 @@ class IngestionTests(unittest.TestCase):
             report_interval_s=60,
         )
         self.assertTrue(self.ingest(sensor_record(tx_sequence=2, co2_ppm=812)))
+        self.assertTrue(self.ingest(sensor_record(tx_sequence=3, co2_ppm=825)))
         tub_id = int(assigned["tub_id"])
         updated = update_grow(
             self.database_path,
@@ -612,7 +613,7 @@ class IngestionTests(unittest.TestCase):
         )
         self.assertEqual(updated["title"], "Blue Oyster")
         self.assertEqual(updated["pin_dates"], ["2026-08-08", "2026-08-09"])
-        self.assertEqual(updated["history"][-1]["co2_ppm"], 812.0)
+        self.assertEqual([item["co2_ppm"] for item in updated["history"]], [812.0, 825.0])
 
         grows = get_current_grows(self.database_path)
         self.assertEqual(len(grows), 1)
@@ -631,7 +632,7 @@ class IngestionTests(unittest.TestCase):
             capture_time_source="exif",
         )
         self.assertEqual(photo["capture_time_source"], "exif")
-        self.assertEqual(photo["condition_co2_ppm"], 812)
+        self.assertEqual(photo["condition_co2_ppm"], 825)
         self.assertEqual(photo["condition_node_id"], 1)
         detailed = get_grow(self.database_path, tub_id)
         assert detailed is not None
