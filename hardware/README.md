@@ -36,6 +36,13 @@ Exporting the complete project is preferred over exporting the schematic and
 PCB separately because the archive also preserves project relationships and
 the placed device/footprint data.
 
+EasyEDA Pro currently exports the transmitter project as one `.epro2` file,
+rather than a board-only archive. This is intentional: the file is the complete
+editable project and remains the canonical source for that revision. The
+committed transmitter sources are `MycoLogger Transmitter V0.2.epro2` and the
+in-progress `MycoLogger Transmitter V0.3.epro2`. V0.3 also has matching Gerber,
+BOM, and pick-and-place exports under `transmitter/manufacturing/`.
+
 ## Exporting from EasyEDA Standard
 
 1. In the project list, right-click the project folder.
