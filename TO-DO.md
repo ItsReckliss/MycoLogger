@@ -92,16 +92,15 @@ Maintenance rules:
       sleep is in transmitter v0.8.5; Node 1 completed three 20-second
       post-flash reports with no radio failures. Measure the resulting current
       separately with the power profiler.
-- [ ] Replace the current SysTick-driven `__WFI()` loop with STM32 Stop 2.
-  - [x] ~~Use LPTIM1 clocked from the internal LSI as the one-shot report timer;~~
-        no external RTC or LSE crystal is required. Use a prescaler so the
-        16-bit timer can cover the configured interval, chaining sleeps only
-        when an eventual interval exceeds one timer period.
+- [x] ~~Replace the current SysTick-driven `__WFI()` loop with STM32 Stop 2.~~
+  - [x] ~~Use the internal RTC wake-up timer from LSI as the Stop 2 report
+        timer; no external RTC or LSE crystal is required.~~ Transmitter v0.8.7
+        uses its 1 Hz wake-up clock for single sleeps up to 65,536 seconds.
   - [ ] Change the PC14 debug button from polled GPIO to falling-edge EXTI.
         Its ISR must only record a wake request; debounce and start the same
         measurement/report action after clocks have been restored. Source is
         implemented; confirm it with a physical button press on Node 1.
-  - [x] ~~Disable SysTick while sleeping, clear all LPTIM/EXTI pending flags
+  - [x] ~~Disable SysTick while sleeping, clear all RTC/EXTI pending flags
         before WFI, and restore the system clock and SysTick after every wake.~~
   - [x] ~~Read and explicitly verify the `IWDG_STOP` option byte is configured
         to freeze the independent watchdog in Stop mode. The current 8-second
@@ -119,8 +118,9 @@ Maintenance rules:
         below a verified safe Li-ion voltage while retaining infrequent battery
         checks and recovery behavior.
 - [ ] Consider adaptive reporting at low battery.
-- [ ] For the next PCB revision, switch the high-value battery divider so it
-      draws current only while the ADC is measuring.
+- [x] ~~Keep the 470 kOhm battery divider always connected on the next PCB
+      revision.~~ Its approximately 5 mAh/month loss does not justify a load
+      switch or additional control circuitry.
 
 ## Priority 3 - Radio robustness and scale
 
@@ -201,14 +201,16 @@ Maintenance rules:
       board renders, and fabrication notes for both existing boards.
 - [ ] Review measured regulator and load-switch quiescent current against the
       intended battery-life target.
-- [ ] Add accessible current-measurement points or a removable power jumper.
-- [ ] Add a small keyed SMD JST-style SWD programming connector to the next
-      transmitter revision.
+- [x] ~~Add accessible current-measurement points or a removable power jumper.~~
+      The next transmitter revision has backside 2 mm x 2 mm `I_In`/`I_Out`
+      pads between the switch output and regulator input, plus an optional 0201
+      0-ohm bypass jumper.
+- [x] ~~Add a small keyed SMD JST-style SWD programming connector to the next
+      transmitter revision.~~
   - [ ] Place it near the USB-C charging connector so charging and programming
         use one accessible enclosure area.
-  - [ ] Route SWDIO, SWCLK, NRST, GND, and VTREF/3.3 V sensing; do not use the
-        connector to power the transmitter unless that behavior is explicitly
-        designed and protected.
+  - [x] ~~Route SWDIO, SWCLK, NRST, and GND.~~ The LDO powers the MCU during
+        flashing; nearby programming pads remain available for recovery.
   - [ ] Choose a readily sourced locking/keyed series and document its exact
         pinout, mating housing, contacts, and ST-LINK adapter cable.
   - [ ] Orient and label the connector to prevent a reversed programming cable,
@@ -219,7 +221,9 @@ Maintenance rules:
       external-access points.
 - [ ] Review antenna placement, enclosure detuning, ground clearance, and RF
       keep-outs using the final physical enclosure.
-- [ ] Consider a hardware-controlled battery divider for the next transmitter.
+- [x] ~~Consider a hardware-controlled battery divider for the next
+      transmitter.~~ Rejected for this revision: the 470 kOhm divider's
+      approximately 5 mAh/month draw is acceptable.
 - [ ] Consider a fuel gauge only if voltage-based state-of-charge proves too
       inaccurate for the selected battery chemistry and load profile.
 
@@ -248,6 +252,8 @@ Maintenance rules:
 - [x] ~~Receiver service automatically discovers, reconnects, and stores readings.~~
 - [x] ~~Web dashboard shows nodes, tubs, jars, graphs, notes, and photos with captured conditions.~~
 - [x] ~~Separate tub graph metrics into readable lanes with dotted average guides.~~
+- [x] ~~Plot every valid stored measurement in each selected graph range and add
+      hover/touch value inspection.~~
 - [x] ~~Add jar/tub archive, contamination classification, sensor release, and guarded permanent deletion.~~
 - [x] ~~Report interval can be changed through the receiver and acknowledged by the transmitter.~~
 - [x] ~~Universal firmware and the ST-LINK provisioner assign permanent node IDs using MCU UIDs and server reservations.~~

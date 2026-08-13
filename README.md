@@ -38,20 +38,19 @@ Last reviewed: 2026-08-13.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build and Node 1: v0.8.6.
+- Transmitter source/build and Node 1: v0.8.7.
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
-  flashed with v0.8.6 and registered to that permanent node ID. Its independent
+  flashed with v0.8.7 and registered to that permanent node ID. Its independent
   watchdog was bench-tested through an intentional unrefreshed timeout and
   confirmed by the captured `IWDGRSTF` reset-cause flag.
 - Receiver source/build: v0.9.0. The physical receiver remains on v0.8.0;
   its watchdog reset has been bench-tested, but boot-link configuration delivery
   and downlink-window configuration await a user-performed USB flash.
-- Node 1 reports transmitter firmware `0.8.6` and its original 60-second
-  interval after a real erased-page recovery test. Its current test interval is
-  15 seconds. The SCD41's automatic self-calibration has been explicitly
-  disabled and persisted because tub operation will not provide regular fresh
-  air exposure; a CRC-checked `get_automatic_self_calibration_enabled` readback
-  verified the saved value is disabled.
+- Node 1 reports transmitter firmware `0.8.7` and its original 60-second
+  interval after a real erased-page recovery test. Its current bench-test
+  interval is 20 seconds. The SCD41 automatic self-calibration disable command
+  is sent at every sensor power-up because tub operation will not provide
+  regular fresh-air exposure; a CRC-checked readback verified the setting.
 - The BTT Pi target is `mycopi.local`, but deployment of the current server as a
   managed Pi service is not complete.
 - Git remote: `https://github.com/ItsReckliss/MycoLogger.git`.
@@ -89,17 +88,20 @@ the affected node. These server-side thresholds are intentionally fixed for now;
 making them per-account/per-node settings is a later configuration feature.
 
 Grow charts retain every valid stored measurement in the selected time range;
-they do not bucket or average readings for display. This is practical at the
+they do not bucket or average readings for display. Hovering a chart, or
+touching and holding on mobile, reveals a vertical dotted cursor with the
+timestamp and the three values nearest that point. This is practical at the
 normal five-minute-or-longer reporting cadence and keeps short-interval bench
 test data available for inspection.
 
-Transmitter v0.8.6 enters STM32 Stop 2 only after radio/sensor/downlink/LED
-state is idle. LPTIM1 runs from the internal LSI at 1 kHz to wake scheduled
-reports, and PC14's falling-edge EXTI wakes an immediate manual measurement.
-The Node 1 option byte `IWDG_STOP` was changed to freeze the watchdog during
-Stop mode; otherwise the firmware intentionally falls back to normal WFI.
-Node 1 completed multiple 15-second Stop 2 timer-wake cycles without reset or
-radio/sensor failures. Button wake still awaits a physical press test.
+Transmitter v0.8.7 enters STM32 Stop 2 only after radio/sensor/downlink/LED
+state is idle. The internal RTC wake-up timer runs from LSI-derived 1 Hz time
+and can arm a single sleep of up to 65,536 seconds; PC14's falling-edge EXTI
+wakes an immediate manual measurement. The Node 1 option byte `IWDG_STOP` was
+changed to freeze the watchdog during Stop mode; otherwise the firmware
+intentionally falls back to normal WFI. Node 1 completed normal 20-second
+report cycles with the sensor powered off, MCU in Stop 2, and radio in warm-start
+sleep between reports. Button wake still awaits a physical press test.
 
 Receiver v0.8.0 source also enables its independent watchdog. Because the STM32F042
 LSI has a much wider specified tolerance, its 12.8-second nominal setting is
@@ -117,6 +119,15 @@ unrefreshed watchdog timeout.
 - Sensor: Sensirion SCD41
 - Sensor power: TPS22918 load switch controlled by PB7
 - Battery sense: PA0 through a 470 kOhm / 470 kOhm divider and 10 nF capacitor
+- Next transmitter revision: retain the always-connected 470 kOhm divider;
+  expected divider draw is only about 5 mAh/month, so no divider load switch is
+  planned.
+- Next transmitter revision: 4-pin JST-SH SWD connector carrying SWDIO, SWCLK,
+  NRST, and GND; the LDO powers the MCU while flashing, and accessible pads are
+  retained for recovery.
+- Next transmitter revision: 2 mm x 2 mm `I_In`/`I_Out` current-measurement
+  pads between the main switch and regulator input, bridged by an optional 0201
+  0-ohm jumper.
 - Debug button: PC14, active low
 - Debug LED: PF3, active high
 - Radio SPI/control:
@@ -286,7 +297,8 @@ Implemented dashboard/data features include:
   through the receiver;
 - current tubs with stable-scale, vertically separated temperature, humidity,
   and CO2 graph lanes, dotted window-average guides, and selectable 1 hour,
-  1 day, 3 day, 7 day, and 1 month ranges;
+  1 day, 3 day, 7 day, and 1 month ranges; every valid stored measurement is
+  plotted, with hover/touch value inspection;
 - current spawn jars, preparation/inoculation/break-and-shake records, and
   culture/species-aware spawning into tubs;
 - explicit tub and jar lifecycle actions, including contamination outcomes,
