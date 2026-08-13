@@ -256,7 +256,8 @@ and dispatches pending node commands.
 Implemented dashboard/data features include:
 
 - live node readings, RSSI/SNR, battery field, firmware version, and config state;
-- configurable report interval delivered through the receiver;
+- configurable report interval and downlink receive-window duration delivered
+  through the receiver;
 - current tubs with stable-scale, vertically separated temperature, humidity,
   and CO2 graph lanes, dotted window-average guides, and selectable 1 hour,
   1 day, 3 day, 7 day, and 1 month ranges;
@@ -268,6 +269,13 @@ Implemented dashboard/data features include:
 - multiple queued photo uploads, EXIF capture times, and environmental conditions
   associated with the nearest grow measurement;
 - node/tub assignment history so reusing a sensor does not relabel old data.
+
+The top-right Account menu currently provides local UI placeholders for future
+username/password login and “Keep me logged in” support. Its **Save & shut down
+server** control is functional: after confirmation it requests a graceful
+server stop, including orderly receiver-service shutdown. It is intentionally
+unauthenticated only while this is a local development deployment; production
+use must wait for the planned account authorization work in `TO-DO.md`.
 
 Server-specific setup, environment variables, persistent-data paths, and Pi
 layout are documented in [server/README.md](server/README.md).

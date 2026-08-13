@@ -127,8 +127,8 @@ Maintenance rules:
 - [ ] Add CSV/JSON export for measurements and grow records.
 - [ ] Add database retention/downsampling rules if long-term raw data growth
       becomes significant.
-- [ ] Add user authentication and protect provisioning/configuration endpoints,
-      even when primarily accessed through Tailscale.
+- [ ] Apply authentication to provisioning, configuration, and server-shutdown
+      endpoints, even when primarily accessed through Tailscale.
 - [ ] Add clear UI warnings when the receiver firmware and node protocol
       versions are incompatible.
 
