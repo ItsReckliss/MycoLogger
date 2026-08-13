@@ -38,15 +38,17 @@ Last reviewed: 2026-08-12.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build: v0.6.5.
+- Transmitter source/build: v0.8.0.
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
-  flashed with v0.6.5 and registered to that permanent node ID.
-- Receiver source/build: v0.6.0.
+  flashed with v0.8.0 and registered to that permanent node ID. Its independent
+  watchdog was bench-tested through an intentional unrefreshed timeout and
+  confirmed by the captured `IWDGRSTF` reset-cause flag.
+- Receiver source: v0.7.0; its local build and physical USB flash are pending.
 - Physical USB receiver: connected and receiving packets, but its installed
   version is still unknown/older. It must be put into its bootloader and flashed
-  with receiver v0.6.0 before receiver version queries and the newest link/config
+  with receiver v0.7.0 before receiver version queries and the newest link/config
   behavior can be assumed.
-- Node 1 reports transmitter firmware `0.6.5` and calibrated battery voltage
+- Node 1 reports transmitter firmware `0.8.0` and calibrated battery voltage
   `3.752 V` to the dashboard, matching the simultaneous battery-lead reading.
 - The BTT Pi target is `mycopi.local`, but deployment of the current server as a
   managed Pi service is not complete.
@@ -60,6 +62,22 @@ ST-LINK inspection proved PA0 uses ADC channel 4 on this MCU, while its internal
 VREFINT uses channel 12. Transmitter v0.6.5 converts those channels separately
 to avoid stale EOC results and applies a `0.9992` calibration factor derived
 from a simultaneous `3.752 V` battery-lead measurement.
+
+Transmitter v0.8.0 enables the STM32 independent watchdog with an approximately
+8-second LSI-clocked timeout. The main state-machine loop refreshes it once per
+ second only after it completes a full pass, while dead loops and fault handlers deliberately do not. The watchdog
+is frozen when a debugger halts the core, and the raw RCC reset-cause flags are
+captured at boot in `g_boot_reset_flags`. Every normal sensor packet also carries
+the reset flags and saturating sensor/radio operation-failure counters for the
+current boot; the server stores each snapshot and exposes the latest values on
+the node API. Recoverable sensor/radio failures are retried and counted rather
+than causing watchdog resets.
+
+Receiver v0.7.0 source also enables its independent watchdog. Because the STM32F042
+LSI has a much wider specified tolerance, its 12.8-second nominal setting is
+approximately 8.5 to 17.1 seconds across the full oscillator range. Receiver
+status JSON includes the raw `reset_flags` value for watchdog-reset diagnosis.
+The receiver image still needs to be built and physically verified.
 
 ## Hardware
 

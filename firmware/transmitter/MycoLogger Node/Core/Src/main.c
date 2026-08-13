@@ -51,7 +51,7 @@
 #define NETWORK_FAIL_BLINK_TIME_MS     250U
 #define RADIO_RETRY_INTERVAL_MS     5000U
 #define RADIO_ERROR_PATTERN_MS      2000U
-#define SENSOR_PACKET_SIZE            39U
+#define SENSOR_PACKET_SIZE            47U
 #define CONFIG_PACKET_SIZE            22U
 #define CONFIG_ACK_PACKET_SIZE        23U
 #define TEST_PACKET_VERSION            1U
@@ -64,8 +64,20 @@
 #define LINK_CHECK_PACKET_SIZE         14U
 #define DEFAULT_NODE_ID                0U
 #define FIRMWARE_VERSION_MAJOR         0U
-#define FIRMWARE_VERSION_MINOR         6U
-#define FIRMWARE_VERSION_PATCH         5U
+#define FIRMWARE_VERSION_MINOR         8U
+#define FIRMWARE_VERSION_PATCH         0U
+#define IWDG_KEY_ENABLE             0xCCCCU
+#define IWDG_KEY_WRITE_ACCESS       0x5555U
+#define IWDG_KEY_REFRESH            0xAAAAU
+#define IWDG_PRESCALER_DIV64              4U
+#define IWDG_RELOAD_8_SECONDS          3999U
+#define IWDG_WINDOW_DISABLED           4095U
+#define IWDG_UPDATE_TIMEOUT_MS           10U
+#define IWDG_REFRESH_INTERVAL_MS       1000U
+#define RESET_CAUSE_FLAGS (RCC_CSR_OBLRSTF | RCC_CSR_PINRSTF | \
+                           RCC_CSR_PWRRSTF | RCC_CSR_SFTRSTF | \
+                           RCC_CSR_IWDGRSTF | RCC_CSR_WWDGRSTF | \
+                           RCC_CSR_LPWRRSTF)
 
 /* USER CODE END PD */
 
@@ -77,6 +89,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+
+/* Retained for ST-LINK inspection and future over-the-air diagnostics. */
+volatile uint32_t g_boot_reset_flags = 0U;
 
 /* USER CODE END PV */
 
@@ -99,6 +114,46 @@ static void BlinkDebugLedAtBoot(void)
 
     HAL_GPIO_WritePin(Debug_LED_GPIO_Port, Debug_LED_Pin, GPIO_PIN_RESET);
     HAL_Delay(BOOT_BLINK_TIME_MS);
+  }
+}
+
+static bool IndependentWatchdog_Start(void)
+{
+  uint32_t started;
+
+  /* Keep source-level debugging usable; deployed operation is unaffected. */
+  DBGMCU->APBFZ1 |= DBGMCU_APBFZ1_DBG_IWDG_STOP;
+
+  /* Start the LSI-clocked watchdog, then program an approximately 8 s period. */
+  IWDG->KR = IWDG_KEY_ENABLE;
+  IWDG->KR = IWDG_KEY_WRITE_ACCESS;
+  IWDG->PR = IWDG_PRESCALER_DIV64;
+  IWDG->RLR = IWDG_RELOAD_8_SECONDS;
+  IWDG->WINR = IWDG_WINDOW_DISABLED;
+
+  started = HAL_GetTick();
+  while ((IWDG->SR & (IWDG_SR_PVU | IWDG_SR_RVU | IWDG_SR_WVU)) != 0U)
+  {
+    if ((HAL_GetTick() - started) >= IWDG_UPDATE_TIMEOUT_MS)
+    {
+      return false;
+    }
+  }
+
+  IWDG->KR = IWDG_KEY_REFRESH;
+  return true;
+}
+
+static void IndependentWatchdog_Refresh(void)
+{
+  IWDG->KR = IWDG_KEY_REFRESH;
+}
+
+static void IncrementFailureCounter(uint16_t *counter)
+{
+  if ((counter != NULL) && (*counter != UINT16_MAX))
+  {
+    (*counter)++;
   }
 }
 
@@ -133,7 +188,9 @@ static void BuildSensorPacket(uint8_t *packet,
                               bool batteryValid,
                               uint16_t batteryMillivolts,
                               const SCD41Measurement *measurement,
-                              SCD41Error sensorError)
+                              SCD41Error sensorError,
+                              uint16_t sensorFailureCount,
+                              uint16_t radioFailureCount)
 {
   packet[0] = 'M';
   packet[1] = 'Y';
@@ -167,6 +224,11 @@ static void BuildSensorPacket(uint8_t *packet,
   packet[36] = FIRMWARE_VERSION_MAJOR;
   packet[37] = FIRMWARE_VERSION_MINOR;
   packet[38] = FIRMWARE_VERSION_PATCH;
+  /* These counters reset at boot and describe recoverable failures observed
+     since this boot.  The reset flags identify why the current boot began. */
+  WriteUint32BigEndian(&packet[39], g_boot_reset_flags);
+  WriteUint16BigEndian(&packet[43], sensorFailureCount);
+  WriteUint16BigEndian(&packet[45], radioFailureCount);
 }
 
 static bool ApplyConfigPacket(const SX1262RxPacket *packet,
@@ -272,6 +334,9 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
+  g_boot_reset_flags = RCC->CSR & RESET_CAUSE_FLAGS;
+  RCC->CSR |= RCC_CSR_RMVF;
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -284,6 +349,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
+
+  if (!IndependentWatchdog_Start())
+  {
+    Error_Handler();
+  }
 
   BlinkDebugLedAtBoot();
   SX1262_TX_BusInit();
@@ -315,6 +385,7 @@ int main(void)
                           GPIO_PIN_RESET);
         HAL_Delay(110U);
       }
+      IndependentWatchdog_Refresh();
       HAL_Delay(1800U);
     }
   }
@@ -323,6 +394,8 @@ int main(void)
   bool radioReady =
       SX1262_TX_Init(&radioStatus) == SX1262_TX_STATUS_OK;
   bool sensorCycleFailed = false;
+  uint16_t sensorFailureCount = 0U;
+  uint16_t radioFailureCount = 0U;
   bool sensorMeasurementValid = false;
   bool sensorPacketPending = false;
   bool sensorTransmitActive = false;
@@ -357,11 +430,13 @@ int main(void)
   GPIO_PinState previousRawButtonState = rawButtonState;
   GPIO_PinState debouncedButtonState = rawButtonState;
   uint32_t buttonDebounceTick = HAL_GetTick();
+  uint32_t lastWatchdogRefreshTick = HAL_GetTick();
 
   /* Take the first sample immediately; subsequent starts are one minute apart. */
   if (SCD41_StartSingleShot() != SCD41_STATUS_OK)
   {
     sensorCycleFailed = true;
+    IncrementFailureCounter(&sensorFailureCount);
     sensorPacketPending = true;
   }
 
@@ -405,6 +480,7 @@ int main(void)
           if (SCD41_StartSingleShot() != SCD41_STATUS_OK)
           {
             sensorCycleFailed = true;
+            IncrementFailureCounter(&sensorFailureCount);
             sensorPacketPending = true;
           }
         }
@@ -427,6 +503,7 @@ int main(void)
       {
         sensorMeasurementValid = false;
         sensorCycleFailed = true;
+        IncrementFailureCounter(&sensorFailureCount);
         sensorPacketPending = true;
       }
     }
@@ -440,6 +517,7 @@ int main(void)
       if (SCD41_StartSingleShot() != SCD41_STATUS_OK)
       {
         sensorCycleFailed = true;
+        IncrementFailureCounter(&sensorFailureCount);
         sensorPacketPending = true;
       }
     }
@@ -450,6 +528,10 @@ int main(void)
       lastRadioInitTick = now;
       radioReady =
           SX1262_TX_Init(&radioStatus) == SX1262_TX_STATUS_OK;
+      if (!radioReady)
+      {
+        IncrementFailureCounter(&radioFailureCount);
+      }
       if (radioReady && networkConfirmationPending &&
           (networkCheckAttempts < NETWORK_CHECK_MAX_ATTEMPTS))
       {
@@ -474,6 +556,7 @@ int main(void)
       }
       else
       {
+        IncrementFailureCounter(&radioFailureCount);
         networkStartupCheckActive = false;
         radioReady = false;
         lastRadioInitTick = now;
@@ -493,7 +576,9 @@ int main(void)
                         batteryValid,
                         batteryMillivolts,
                         &sensorMeasurement,
-                        SCD41_GetLastError());
+                        SCD41_GetLastError(),
+                        sensorFailureCount,
+                        radioFailureCount);
 
       if (SX1262_TX_Start(sensorPacket, sizeof(sensorPacket)) ==
           SX1262_TX_STATUS_OK)
@@ -509,6 +594,7 @@ int main(void)
       }
       else
       {
+        IncrementFailureCounter(&radioFailureCount);
         networkStartupCheckActive = false;
         radioReady = false;
         lastRadioInitTick = now;
@@ -528,6 +614,7 @@ int main(void)
         }
         else
         {
+          IncrementFailureCounter(&radioFailureCount);
           networkStartupCheckActive = false;
           radioReady = false;
           lastRadioInitTick = now;
@@ -536,6 +623,7 @@ int main(void)
       else if ((event == SX1262_TX_EVENT_TIMEOUT) ||
                (event == SX1262_TX_EVENT_BUS_ERROR))
       {
+        IncrementFailureCounter(&radioFailureCount);
         networkLinkTransmitActive = false;
         networkStartupCheckActive = false;
         radioReady = false;
@@ -555,6 +643,7 @@ int main(void)
         }
         else
         {
+          IncrementFailureCounter(&radioFailureCount);
           networkStartupCheckActive = false;
           radioReady = false;
           lastRadioInitTick = now;
@@ -563,6 +652,7 @@ int main(void)
       else if ((event == SX1262_TX_EVENT_TIMEOUT) ||
                (event == SX1262_TX_EVENT_BUS_ERROR))
       {
+        IncrementFailureCounter(&radioFailureCount);
         sensorTransmitActive = false;
         networkStartupCheckActive = false;
         radioReady = false;
@@ -649,6 +739,7 @@ int main(void)
           }
           else
           {
+            IncrementFailureCounter(&radioFailureCount);
             radioReady = false;
             lastRadioInitTick = now;
           }
@@ -679,6 +770,7 @@ int main(void)
       }
       else if (event == SX1262_RX_EVENT_BUS_ERROR)
       {
+        IncrementFailureCounter(&radioFailureCount);
         downlinkReceiveActive = false;
         networkStartupCheckActive = false;
         radioReady = false;
@@ -695,6 +787,7 @@ int main(void)
       else if ((event == SX1262_TX_EVENT_TIMEOUT) ||
                (event == SX1262_TX_EVENT_BUS_ERROR))
       {
+        IncrementFailureCounter(&radioFailureCount);
         configAckTransmitActive = false;
         radioReady = false;
         lastRadioInitTick = now;
@@ -757,6 +850,14 @@ int main(void)
     else
     {
       HAL_GPIO_WritePin(Debug_LED_GPIO_Port, Debug_LED_Pin, GPIO_PIN_RESET);
+    }
+
+    /* Refresh only after a full state-machine pass completed. A stuck sensor,
+       radio, or fault handler therefore cannot keep the watchdog alive. */
+    if ((now - lastWatchdogRefreshTick) >= IWDG_REFRESH_INTERVAL_MS)
+    {
+      IndependentWatchdog_Refresh();
+      lastWatchdogRefreshTick = now;
     }
 
     /* Sleep the CPU until the next SysTick/interrupt while state machines wait. */

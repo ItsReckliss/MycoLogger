@@ -29,6 +29,9 @@ Packet type `2` extends this common 19-byte header with an SCD41 measurement:
 | 36 | 1 | Firmware major | Semantic firmware-version major component |
 | 37 | 1 | Firmware minor | Semantic firmware-version minor component |
 | 38 | 1 | Firmware patch | Semantic firmware-version patch component |
+| 39 | 4 | Reset flags | Raw STM32 RCC reset-cause flags captured at this boot |
+| 43 | 2 | Sensor failures | Saturating SCD41-operation failure count since this boot |
+| 45 | 2 | Radio failures | Saturating SX1262 operation failure count since this boot |
 
 Older 26-byte type-2 packets remain valid; the configuration fields are an
 optional extension understood by server version 0.2 and later. The battery
@@ -37,6 +40,13 @@ compatible with the current server. Transmitter v0.6.0 adds the optional
 three-byte version extension. It is repeated in every measurement so a server
 restart, database restore, or missed first packet repairs the cached version
 without a special radio exchange.
+
+Transmitter v0.8.0 adds the optional eight-byte diagnostics extension. Its
+counters restart at every MCU reset, so the server stores each reading's
+snapshot and exposes the newest values on the node. They represent recoverable
+operation failures; a failed sensor conversion or radio operation is reported
+and retried, not treated as a reason to reset the device. The watchdog is for a
+firmware hang that prevents a full state-machine pass from completing.
 
 ## Configuration downlink
 

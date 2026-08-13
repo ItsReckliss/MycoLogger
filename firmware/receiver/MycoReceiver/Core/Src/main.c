@@ -37,7 +37,19 @@
 #define LINK_ACK_TURNAROUND_MS       30U
 
 #define PROTOCOL_VERSION             1U
-#define FIRMWARE_VERSION       "0.6.0"
+#define FIRMWARE_VERSION       "0.7.0"
+#define IWDG_KEY_ENABLE          0xCCCCU
+#define IWDG_KEY_WRITE_ACCESS    0x5555U
+#define IWDG_KEY_REFRESH         0xAAAAU
+#define IWDG_PRESCALER_DIV256          6U
+#define IWDG_RELOAD_12_8_SECONDS    1999U
+#define IWDG_WINDOW_DISABLED        4095U
+#define IWDG_UPDATE_TIMEOUT_MS        10U
+#define IWDG_REFRESH_INTERVAL_MS    1000U
+#define RESET_CAUSE_FLAGS (RCC_CSR_OBLRSTF | RCC_CSR_PINRSTF | \
+                           RCC_CSR_PORRSTF | RCC_CSR_SFTRSTF | \
+                           RCC_CSR_IWDGRSTF | RCC_CSR_WWDGRSTF | \
+                           RCC_CSR_LPWRRSTF)
 
 /* USER CODE END PD */
 
@@ -49,6 +61,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+
+/* Retained for USB status reporting and debugger inspection. */
+volatile uint32_t g_boot_reset_flags = 0U;
 
 /* USER CODE END PV */
 
@@ -79,6 +94,36 @@ static uint8_t Packet_GetNetworkCheck(const SX1262Packet *packet,
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static uint8_t IndependentWatchdog_Start(void)
+{
+    uint32_t started;
+
+    DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_IWDG_STOP;
+
+    IWDG->KR = IWDG_KEY_ENABLE;
+    IWDG->KR = IWDG_KEY_WRITE_ACCESS;
+    IWDG->PR = IWDG_PRESCALER_DIV256;
+    IWDG->RLR = IWDG_RELOAD_12_8_SECONDS;
+    IWDG->WINR = IWDG_WINDOW_DISABLED;
+
+    started = HAL_GetTick();
+    while ((IWDG->SR & (IWDG_SR_PVU | IWDG_SR_RVU | IWDG_SR_WVU)) != 0U)
+    {
+        if ((HAL_GetTick() - started) >= IWDG_UPDATE_TIMEOUT_MS)
+        {
+            return 0U;
+        }
+    }
+
+    IWDG->KR = IWDG_KEY_REFRESH;
+    return 1U;
+}
+
+static void IndependentWatchdog_Refresh(void)
+{
+    IWDG->KR = IWDG_KEY_REFRESH;
+}
 
 /**
   * @brief Send a null-terminated string through USB CDC.
@@ -236,6 +281,9 @@ static void USB_ReportStatus(uint32_t uptime_ms,
         cursor = Append_U32(cursor, radio_status);
     }
 
+    cursor = Append_Text(cursor, ",\"reset_flags\":");
+    cursor = Append_U32(cursor, g_boot_reset_flags);
+
     *cursor = '}';
     cursor++;
     *cursor = '\n';
@@ -380,6 +428,9 @@ int main(void)
 
     /* USER CODE BEGIN Init */
 
+    g_boot_reset_flags = RCC->CSR & RESET_CAUSE_FLAGS;
+    RCC->CSR |= RCC_CSR_RMVF;
+
     /* USER CODE END Init */
 
     /* Configure the system clock */
@@ -391,6 +442,10 @@ int main(void)
 
     /* Initialize all configured peripherals */
     MX_GPIO_Init();
+    if (IndependentWatchdog_Start() == 0U)
+    {
+        Error_Handler();
+    }
     SX1262_BusInit();
     MX_USB_DEVICE_Init();
 
@@ -402,6 +457,7 @@ int main(void)
     uint32_t led_blinks_remaining = 0U;
     uint8_t led_on = 0U;
     uint32_t packet_node_id = 0U;
+    uint32_t watchdog_refresh_timer = HAL_GetTick();
 
     /*
      * USB heartbeat timing.
@@ -464,6 +520,12 @@ int main(void)
     while (1)
     {
         now = HAL_GetTick();
+
+        if ((now - watchdog_refresh_timer) >= IWDG_REFRESH_INTERVAL_MS)
+        {
+            IndependentWatchdog_Refresh();
+            watchdog_refresh_timer = now;
+        }
 
         if (MycoCommand_TakeInfoRequest())
         {

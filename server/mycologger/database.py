@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS nodes (
     last_config_transaction_id  INTEGER,
     last_config_status          TEXT,
     firmware_version           TEXT,
-    firmware_updated_utc       TEXT
+    firmware_updated_utc       TEXT,
+    last_reset_flags           INTEGER,
+    sensor_failure_count       INTEGER,
+    radio_failure_count        INTEGER
 )
 """
 
@@ -214,6 +217,9 @@ CREATE TABLE IF NOT EXISTS measurements (
     snr_db_quarters         INTEGER,
     sensor_valid            INTEGER NOT NULL DEFAULT 0,
     sensor_error            TEXT,
+    reset_flags             INTEGER,
+    sensor_failure_count   INTEGER,
+    radio_failure_count    INTEGER,
     UNIQUE(node_id, boot_session, tx_sequence)
 )
 """
@@ -270,6 +276,9 @@ def _migrate_nodes(connection: sqlite3.Connection) -> None:
         "last_config_status": "TEXT",
         "firmware_version": "TEXT",
         "firmware_updated_utc": "TEXT",
+        "last_reset_flags": "INTEGER",
+        "sensor_failure_count": "INTEGER",
+        "radio_failure_count": "INTEGER",
     }
     for name, declaration in additions.items():
         if name not in columns:
@@ -307,6 +316,16 @@ def _migrate_measurements(connection: sqlite3.Connection) -> None:
         connection.execute(
             "ALTER TABLE measurements ADD COLUMN battery_mv INTEGER"
         )
+    additions = {
+        "reset_flags": "INTEGER",
+        "sensor_failure_count": "INTEGER",
+        "radio_failure_count": "INTEGER",
+    }
+    for name, declaration in additions.items():
+        if columns and name not in columns:
+            connection.execute(
+                f"ALTER TABLE measurements ADD COLUMN {name} {declaration}"
+            )
 
 
 def _migrate_tubs(connection: sqlite3.Connection) -> None:
@@ -436,7 +455,7 @@ def initialize(database_path: Path) -> None:
                 WHERE status = 'active'
             """
         )
-        connection.execute("PRAGMA user_version = 9")
+        connection.execute("PRAGMA user_version = 10")
 
 
 def _active_tub_id(connection: sqlite3.Connection, node_id: int) -> int | None:
@@ -545,7 +564,8 @@ def store_packet(
         previous = connection.execute(
             """
             SELECT boot_session, last_sequence, last_uptime_s,
-                   sensor_valid, sensor_error
+                   sensor_valid, sensor_error, last_reset_flags,
+                   sensor_failure_count, radio_failure_count
             FROM nodes WHERE node_id = ?
             """,
             (node_id,),
@@ -562,8 +582,9 @@ def store_packet(
                     last_sequence, last_uptime_s, boot_session, packet_count,
                     last_rssi_dbm_x2, last_snr_db_quarters,
                     sensor_valid, sensor_error, firmware_version,
-                    firmware_updated_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+                    firmware_updated_utc, last_reset_flags,
+                    sensor_failure_count, radio_failure_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     node_id,
@@ -579,6 +600,9 @@ def store_packet(
                     sensor_error,
                     decoded.get("firmware_version"),
                     received_utc if decoded.get("firmware_version") else None,
+                    decoded.get("reset_flags"),
+                    decoded.get("sensor_failure_count"),
+                    decoded.get("radio_failure_count"),
                 ),
             )
         else:
@@ -612,7 +636,10 @@ def store_packet(
                     sensor_valid = ?, sensor_error = ?,
                     firmware_version = COALESCE(?, firmware_version),
                     firmware_updated_utc = CASE WHEN ? IS NOT NULL
-                        THEN ? ELSE firmware_updated_utc END
+                        THEN ? ELSE firmware_updated_utc END,
+                    last_reset_flags = COALESCE(?, last_reset_flags),
+                    sensor_failure_count = COALESCE(?, sensor_failure_count),
+                    radio_failure_count = COALESCE(?, radio_failure_count)
                 WHERE node_id = ?
                 """,
                 (
@@ -627,6 +654,9 @@ def store_packet(
                     decoded.get("firmware_version"),
                     decoded.get("firmware_version"),
                     received_utc,
+                    decoded.get("reset_flags"),
+                    decoded.get("sensor_failure_count"),
+                    decoded.get("radio_failure_count"),
                     node_id,
                 ),
             )
@@ -642,8 +672,9 @@ def store_packet(
                     receiver_sequence, packet_type, tx_sequence, tx_uptime_s,
                     button_pressed, co2_ppm, temperature_c, humidity_percent,
                     battery_mv, rssi_dbm_x2, snr_db_quarters,
-                    sensor_valid, sensor_error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    sensor_valid, sensor_error, reset_flags,
+                    sensor_failure_count, radio_failure_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     node_id,
@@ -663,6 +694,9 @@ def store_packet(
                     radio_record.get("snr_db_quarters"),
                     int(bool(decoded.get("sensor_valid", False))),
                     decoded.get("sensor_error"),
+                    decoded.get("reset_flags"),
+                    decoded.get("sensor_failure_count"),
+                    decoded.get("radio_failure_count"),
                 ),
             )
             inserted = cursor.rowcount == 1
@@ -680,6 +714,7 @@ NODE_QUERY = """
         n.config_revision, n.applied_config_revision,
         n.last_config_transaction_id, n.last_config_status,
         n.firmware_version, n.firmware_updated_utc,
+        n.last_reset_flags, n.sensor_failure_count, n.radio_failure_count,
         m.co2_ppm, m.temperature_c, m.humidity_percent, m.battery_mv,
         t.tub_id, t.name AS tub_name,
         c.transaction_id AS pending_transaction_id,

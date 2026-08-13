@@ -65,6 +65,9 @@ def sensor_record(
     report_interval_s: int | None = None,
     battery_mv: int | None = None,
     firmware_version: tuple[int, int, int] | None = None,
+    reset_flags: int | None = None,
+    sensor_failure_count: int | None = None,
+    radio_failure_count: int | None = None,
     network_confirmation_requested: bool = False,
 ) -> dict:
     payload = bytearray(b"MYCO")
@@ -93,6 +96,14 @@ def sensor_record(
         if len(payload) < 36:
             payload.extend(bytes(36 - len(payload)))
         payload.extend(firmware_version)
+    if reset_flags is not None:
+        assert sensor_failure_count is not None
+        assert radio_failure_count is not None
+        if len(payload) < 39:
+            payload.extend(bytes(39 - len(payload)))
+        payload.extend(reset_flags.to_bytes(4, "big"))
+        payload.extend(sensor_failure_count.to_bytes(2, "big"))
+        payload.extend(radio_failure_count.to_bytes(2, "big"))
     return {
         "v": 1,
         "type": "packet",
@@ -441,6 +452,22 @@ class IngestionTests(unittest.TestCase):
         node = get_nodes(self.database_path)[0]
         self.assertEqual(node["firmware_version"], "0.6.0")
         self.assertIsNotNone(node["firmware_updated_utc"])
+
+    def test_transmitter_diagnostics_are_stored_and_exposed(self) -> None:
+        self.assertTrue(
+            self.ingest(
+                sensor_record(
+                    firmware_version=(0, 8, 0),
+                    reset_flags=0x20000000,
+                    sensor_failure_count=3,
+                    radio_failure_count=5,
+                )
+            )
+        )
+        node = get_nodes(self.database_path)[0]
+        self.assertEqual(node["last_reset_flags"], 0x20000000)
+        self.assertEqual(node["sensor_failure_count"], 3)
+        self.assertEqual(node["radio_failure_count"], 5)
 
     def test_uplink_restores_device_config_after_database_replacement(self) -> None:
         self.assertTrue(

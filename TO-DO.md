@@ -36,10 +36,21 @@ Maintenance rules:
         automatic self-calibration will regularly see fresh outdoor air.
   - [ ] Add configurable temperature compensation/offset.
 - [ ] Add an independent watchdog to both transmitter and receiver firmware.
+  - [x] ~~Add and bench-test an approximately 8-second IWDG in the transmitter.~~
+    - [x] ~~Implement and build transmitter v0.7.0, refreshed only by successful
+          main-loop progress.~~
+    - [x] ~~Reconnect the ST-Link, flash Node 1, and deliberately verify IWDGRSTF.~~
+  - [ ] Add and bench-test an independent watchdog in the receiver firmware.
+    - [x] ~~Implement receiver v0.7.0 watchdog code and expose raw reset flags
+          in status JSON.~~
+    - [ ] Build, flash the physical receiver, and deliberately verify an IWDG
+          reset.
 - [ ] Report transmitter diagnostics.
   - [x] ~~Report and cache transmitter firmware version.~~
-  - [ ] Report boot count and reset cause.
-  - [ ] Report sensor and radio failure counts.
+  - [x] ~~Capture the RCC reset-cause flags immediately at boot.~~
+  - [x] ~~Report and cache reset cause over the radio.~~
+  - [ ] Add a persistent transmitter boot count.
+  - [x] ~~Report and cache sensor and radio operation-failure counts.~~
 - [ ] Make persistent transmitter configuration resilient to power loss.
   - [ ] Use two flash records/pages with generation counters and checksums.
   - [ ] Write and verify a new record before retiring the previous record.

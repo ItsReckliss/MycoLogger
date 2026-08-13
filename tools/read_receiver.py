@@ -92,6 +92,10 @@ def decode_radio_payload(record: dict) -> None:
             decoded["firmware_version"] = (
                 f"{payload[36]}.{payload[37]}.{payload[38]}"
             )
+        if len(payload) >= 47:
+            decoded["reset_flags"] = int.from_bytes(payload[39:43], "big")
+            decoded["sensor_failure_count"] = int.from_bytes(payload[43:45], "big")
+            decoded["radio_failure_count"] = int.from_bytes(payload[45:47], "big")
 
     record["decoded"] = decoded
 
