@@ -124,7 +124,7 @@ button, a { color: inherit; }
 .battery-reading, .grow-card-reading.battery-full, .grow-card-reading.battery-medium, .grow-card-reading.battery-low, .grow-card-reading.battery-critical, .grow-card-reading.battery-dead { position: relative; }
 .battery-reading::after, .grow-card-reading.battery-full::after, .grow-card-reading.battery-medium::after, .grow-card-reading.battery-low::after, .grow-card-reading.battery-critical::after, .grow-card-reading.battery-dead::after { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; content: ""; background: var(--battery-accent); }
 .battery-dead::after { animation: battery-dead-pulse 1s steps(2, end) infinite; }
-.battery-alert { display: grid; width: 19px; height: 19px; margin-left: auto; place-items: center; color: #172215; border-radius: 50%; background: #e1a74f; font-size: 13px; font-weight: 800; line-height: 1; }
+.battery-alert { display: grid; width: 19px; height: 19px; margin-right: 11px; margin-left: auto; place-items: center; color: #172215; border-radius: 50%; background: #e1a74f; font-size: 13px; font-weight: 800; line-height: 1; }
 .battery-alert.critical { background: #e16a48; }
 .battery-alert.dead { color: #fff; background: #e64d4d; animation: battery-dead-pulse 1s steps(2, end) infinite; }
 @keyframes battery-dead-pulse { 50% { opacity: .25; } }
@@ -259,7 +259,7 @@ textarea:focus { border-color: var(--accent); }
 .grow-range-button.active { color: #fffbea; border-color: #89a96e; background: #34512a; box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); }
 .grow-chart svg { display: block; width: 100%; height: 100%; }
 .chart-scale-key { position: absolute; inset: 0; pointer-events: none; }
-.chart-scale-key span { position: absolute; right: 5px; padding: 2px 4px; border-radius: 2px; background: rgba(7,17,12,.76); font-size: 7px; line-height: 1.2; white-space: nowrap; }
+.chart-scale-key span { position: absolute; left: 5px; padding: 2px 4px; border-radius: 2px; background: rgba(7,17,12,.76); font-size: 7px; line-height: 1.2; white-space: nowrap; }
 .chart-scale-key .temperature { color: #e0aa68; }
 .chart-scale-key .humidity { color: #77b9d1; }
 .chart-scale-key .co2 { color: #92c778; }
@@ -297,7 +297,7 @@ textarea:focus { border-color: var(--accent); }
 .grow-reading-strip strong { font-size: 15px; }
 .grow-reading-strip span { margin-top: 2px; color: var(--muted); font-size: 8px; text-transform: uppercase; }
 .grow-chart.large { height: 270px; margin: 0; }
-.grow-chart.large .chart-scale-key span { right: 8px; padding: 3px 5px; font-size: 9px; }
+.grow-chart.large .chart-scale-key span { left: 8px; padding: 3px 5px; font-size: 9px; }
 .grow-chart.large .chart-time-scale { right: 9px; bottom: 5px; left: 9px; font-size: 9px; }
 .grow-reading-section .chart-legend { padding-left: 0; }
 .section-help { color: var(--muted); font-size: 9px; }
