@@ -278,6 +278,19 @@ orderly receiver-service shutdown. It is intentionally unauthenticated only
 while this is a local development deployment; production use must wait for the
 planned account authorization work in `TO-DO.md`.
 
+### Future multi-account ownership
+
+The server, not radio traffic, will be the authority for node ownership.
+Transmitters retain their immutable MCU UID and permanent radio node ID; neither
+stores an account username. Future tables will include `accounts`, a current
+`owner_account_id` on nodes, and an append-only node-ownership history. An
+administrator provisions hardware, explicitly claims it for an account, and
+uses an audited transfer action to move it later. Grows, jars, photos,
+measurements, and configuration requests are scoped to that owner, preserving
+the old account's historical data after a transfer. Authenticated per-node
+configuration must be added before account ownership is treated as a security
+boundary on radio.
+
 Server-specific setup, environment variables, persistent-data paths, and Pi
 layout are documented in [server/README.md](server/README.md).
 

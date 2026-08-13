@@ -20,6 +20,8 @@ Maintenance rules:
   - [ ] Give each account isolated grows, jars, photos, and node ownership in
         the server database using immutable account IDs, not usernames flashed
         into transmitters.
+  - [ ] Create `accounts`, node `owner_account_id`, and append-only ownership
+        history; implement administrator claim/unclaim/transfer procedures.
   - [ ] Add authenticated node claiming/transfer; do not treat an unauthenticated
         radio username as proof of account ownership.
   - [ ] Restrict the server-shutdown action to authorized administrators.
