@@ -30,10 +30,11 @@ Maintenance rules:
   - [x] ~~Bench-compare the first and immediate second single-shot results
         after one load-switch power cycle.~~ Node 1 measured 1847 ppm followed
         by 1864 ppm (+17 ppm) five seconds later; keep collecting comparisons.
-  - [ ] Add remotely configurable `discard_first_single_shot` behavior, which
-        takes an unreported first result and transmits the immediate second one.
-  - [ ] Add remotely configurable downlink receive-window duration and tune its
-        minimum reliable value on the physical receiver/server path.
+  - [ ] Retain the option to add configurable `discard_first_single_shot`
+        behavior if later environmental testing justifies it.
+  - [x] ~~Add remotely configurable downlink receive-window duration.~~
+  - [ ] Tune the downlink receive window to the minimum reliable value on the
+        physical receiver/server path.
   - [x] ~~Disable and persist SCD41 automatic self-calibration for the
         power-cycled, high-CO2 tub deployment.~~
   - [ ] Use idle single-shot mode for shorter report intervals where it is more

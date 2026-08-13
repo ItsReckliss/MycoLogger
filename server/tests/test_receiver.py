@@ -908,7 +908,7 @@ class IngestionTests(unittest.TestCase):
         self.assertTrue(self.service.process_line(raw, command_writer=output.append))
         self.assertEqual(
             output,
-            [f"CFG 1 {transaction_id} 1 300\n".encode()],
+            [f"CFG 1 {transaction_id} 1 300 1500\n".encode()],
         )
         sent = get_node(self.database_path, 1)
         assert sent is not None
@@ -959,7 +959,7 @@ class IngestionTests(unittest.TestCase):
                 command_writer=output.append,
             )
         )
-        self.assertEqual(output, [f"CFG 1 {transaction_id} 1 300\n".encode()])
+        self.assertEqual(output, [f"CFG 1 {transaction_id} 1 300 1500\n".encode()])
 
         new_config_packet = sensor_record(
             tx_sequence=14,

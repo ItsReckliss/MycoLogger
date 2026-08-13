@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define MYCO_CONFIG_PACKET_SIZE 22U
+#define MYCO_CONFIG_PACKET_SIZE 26U
 #define MYCO_LINK_ACK_PACKET_SIZE 14U
 
 typedef struct
@@ -13,6 +13,7 @@ typedef struct
     uint32_t transaction_id;
     uint32_t config_revision;
     uint32_t report_interval_s;
+    uint32_t downlink_window_ms;
 } MycoDownlinkCommand;
 
 /** Append bytes received from the USB CDC OUT endpoint. */

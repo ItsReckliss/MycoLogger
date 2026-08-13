@@ -35,7 +35,7 @@ identity when the reserved pages are not erased.
 2. The node sends its normal sensor uplink.
 3. After TX-done, the node opens a short LoRa receive window using the configured
    duration. A value around 1.5 seconds is the current design default.
-4. The server writes `CFG <node> <transaction> <revision> <interval_s>` over
+4. The server writes `CFG <node> <transaction> <revision> <interval_s> <window_ms>` over
    USB immediately after that node's uplink. The receiver switches from receive
    to transmit and sends the binary command inside the window.
 5. The node validates the protocol version, target node ID, revision, command,

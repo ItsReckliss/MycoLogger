@@ -226,7 +226,8 @@ bool NodeConfig_ConsumeProvisioningMarker(MycoNodeConfig *config)
 
 bool NodeConfig_Apply(MycoNodeConfig *config, uint32_t target_node_id,
                       uint32_t transaction_id, uint32_t revision,
-                      uint32_t report_interval_s, uint8_t *status)
+                      uint32_t report_interval_s, uint32_t downlink_window_ms,
+                      uint8_t *status)
 {
     MycoNodeConfig candidate;
     if ((config == NULL) || (status == NULL) || (target_node_id != config->node_id)) return false;
@@ -237,8 +238,11 @@ bool NodeConfig_Apply(MycoNodeConfig *config, uint32_t target_node_id,
     if ((report_interval_s < NODE_CONFIG_MIN_INTERVAL_S) ||
         (report_interval_s > NODE_CONFIG_MAX_INTERVAL_S))
     { *status = NODE_CONFIG_STATUS_INVALID_INTERVAL; return true; }
+    if ((downlink_window_ms < 100U) || (downlink_window_ms > 60000U))
+    { *status = NODE_CONFIG_STATUS_INVALID_INTERVAL; return true; }
     candidate = *config;
     candidate.report_interval_ms = report_interval_s * 1000U;
+    candidate.downlink_window_ms = downlink_window_ms;
     candidate.revision = revision;
     candidate.last_transaction_id = transaction_id;
     if (!SaveConfig(&candidate)) { *status = NODE_CONFIG_STATUS_FLASH_ERROR; return true; }

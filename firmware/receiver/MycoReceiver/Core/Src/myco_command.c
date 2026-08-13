@@ -65,7 +65,8 @@ static bool ParseCommandLine(MycoDownlinkCommand *command)
     if (!ParseU32(&cursor, &command->node_id) || (*cursor++ != ' ') ||
         !ParseU32(&cursor, &command->transaction_id) || (*cursor++ != ' ') ||
         !ParseU32(&cursor, &command->config_revision) || (*cursor++ != ' ') ||
-        !ParseU32(&cursor, &command->report_interval_s) || (*cursor != '\0'))
+        !ParseU32(&cursor, &command->report_interval_s) || (*cursor++ != ' ') ||
+        !ParseU32(&cursor, &command->downlink_window_ms) || (*cursor != '\0'))
     {
         return false;
     }
@@ -74,7 +75,9 @@ static bool ParseCommandLine(MycoDownlinkCommand *command)
            (command->transaction_id != 0U) &&
            (command->config_revision != 0U) &&
            (command->report_interval_s >= 15U) &&
-           (command->report_interval_s <= 604800U);
+           (command->report_interval_s <= 604800U) &&
+           (command->downlink_window_ms >= 100U) &&
+           (command->downlink_window_ms <= 60000U);
 }
 
 void MycoCommand_USBReceive(const uint8_t *data, uint32_t length)
@@ -227,6 +230,7 @@ void MycoCommand_BuildPacket(const MycoDownlinkCommand *command,
     WriteU32(&packet[10], command->transaction_id);
     WriteU32(&packet[14], command->config_revision);
     WriteU32(&packet[18], command->report_interval_s);
+    WriteU32(&packet[22], command->downlink_window_ms);
 }
 
 void MycoCommand_BuildLinkAck(

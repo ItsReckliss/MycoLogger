@@ -58,6 +58,7 @@ def decode_radio_payload(record: dict[str, Any]) -> dict[str, Any] | None:
             "config_revision": int.from_bytes(payload[14:18], "big"),
             "config_status": payload[18],
             "report_interval_s": int.from_bytes(payload[19:23], "big"),
+            "downlink_window_ms": int.from_bytes(payload[23:27], "big") if len(payload) >= 27 else None,
         }
 
     if packet_type == 3:
@@ -112,6 +113,8 @@ def decode_radio_payload(record: dict[str, Any]) -> dict[str, Any] | None:
             decoded["reset_flags"] = int.from_bytes(payload[39:43], "big")
             decoded["sensor_failure_count"] = int.from_bytes(payload[43:45], "big")
             decoded["radio_failure_count"] = int.from_bytes(payload[45:47], "big")
+        if len(payload) >= 51:
+            decoded["downlink_window_ms"] = int.from_bytes(payload[47:51], "big")
 
     return decoded
 
@@ -123,5 +126,6 @@ def encode_usb_config_command(command: dict[str, Any]) -> bytes:
         f"{int(command['node_id'])} "
         f"{int(command['transaction_id'])} "
         f"{int(command['desired_revision'])} "
-        f"{int(command['report_interval_s'])}\n"
+        f"{int(command['report_interval_s'])} "
+        f"{int(command['downlink_window_ms'])}\n"
     ).encode("ascii")

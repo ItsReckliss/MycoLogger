@@ -217,7 +217,10 @@
             <label>Report interval
               <div class="interval-input"><input id="settings-interval" type="number" min="15" max="604800" required /><span>seconds</span></div>
             </label>
-            <p class="form-note">A changed interval is queued and delivered after this node's next report. The status remains pending until the transmitter acknowledges it.</p>
+            <label>Downlink receive window
+              <div class="interval-input"><input id="settings-downlink-window" type="number" min="100" max="60000" required /><span>ms</span></div>
+            </label>
+            <p class="form-note">Changed device settings are queued and delivered after this node's next report. The status remains pending until the transmitter acknowledges them.</p>
           </section>
           <div class="dialog-error" id="settings-error" hidden></div>
         </div>

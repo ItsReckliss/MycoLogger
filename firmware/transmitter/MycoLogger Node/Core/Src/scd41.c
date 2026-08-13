@@ -6,6 +6,7 @@
 #define SCD41_COMMAND_READ_MEASUREMENT   0xEC05U
 #define SCD41_COMMAND_DATA_READY         0xE4B8U
 #define SCD41_COMMAND_SERIAL_NUMBER      0x3682U
+#define SCD41_COMMAND_SET_ASC_ENABLED     0x2416U
 #define SCD41_POWER_UP_TIME_MS             100U
 #define SCD41_MEASUREMENT_TIME_MS           5000U
 #define SCD41_MEASUREMENT_TIMEOUT_MS        6000U
@@ -24,6 +25,7 @@ static SCD41Error last_error;
 static SCD41Error transaction_error;
 
 static bool SendCommand(uint16_t command);
+static bool SendCommandWithWord(uint16_t command, uint16_t value);
 static bool ReadBytes(uint8_t *data, uint8_t length);
 static bool I2C_Start(void);
 static void I2C_Stop(void);
@@ -128,6 +130,15 @@ SCD41Event SCD41_Poll(SCD41Measurement *measurement)
             last_error = SCD41_ERROR_SERIAL_CRC;
             SCD41_PowerOff();
             return SCD41_EVENT_CRC_ERROR;
+        }
+
+        /* ASC assumes regular fresh air.  Disable it for every power-cycled
+           measurement without repeatedly wearing the sensor's EEPROM. */
+        if (!SendCommandWithWord(SCD41_COMMAND_SET_ASC_ENABLED, 0U))
+        {
+            last_error = SCD41_ERROR_SINGLE_SHOT_NACK;
+            SCD41_PowerOff();
+            return SCD41_EVENT_BUS_ERROR;
         }
 
         if (!SendCommand(SCD41_COMMAND_SINGLE_SHOT))
@@ -277,6 +288,25 @@ static bool SendCommand(uint16_t command)
         return false;
     }
 
+    I2C_Stop();
+    return true;
+}
+
+static bool SendCommandWithWord(uint16_t command, uint16_t value)
+{
+    uint8_t word[2] = {(uint8_t)(value >> 8), (uint8_t)value};
+
+    transaction_error = SCD41_ERROR_NONE;
+    if (!I2C_Start() ||
+        !I2C_WriteByte((uint8_t)(SCD41_ADDRESS_7BIT << 1)) ||
+        !I2C_WriteByte((uint8_t)(command >> 8)) ||
+        !I2C_WriteByte((uint8_t)command) ||
+        !I2C_WriteByte(word[0]) || !I2C_WriteByte(word[1]) ||
+        !I2C_WriteByte(CalculateCrc(word, sizeof(word))))
+    {
+        I2C_Stop();
+        return false;
+    }
     I2C_Stop();
     return true;
 }

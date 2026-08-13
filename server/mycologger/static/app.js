@@ -75,6 +75,7 @@ const ui = {
   settingsNotes: document.querySelector("#settings-notes"),
   settingsActive: document.querySelector("#settings-active"),
   settingsInterval: document.querySelector("#settings-interval"),
+  settingsDownlinkWindow: document.querySelector("#settings-downlink-window"),
   settingsConfigStatus: document.querySelector("#settings-config-status"),
   settingsError: document.querySelector("#settings-error"),
   settingsSave: document.querySelector("#settings-save"),
@@ -831,6 +832,7 @@ async function openNodeSettings(nodeId) {
   ui.settingsNotes.value = node.notes || "";
   ui.settingsActive.checked = node.active;
   ui.settingsInterval.value = node.desired_report_interval_s;
+  ui.settingsDownlinkWindow.value = node.desired_downlink_window_ms;
   ui.settingsConfigStatus.textContent = node.command_status;
   ui.settingsConfigStatus.className = `config-badge ${node.command_status}`;
   ui.settingsError.hidden = true;
@@ -854,6 +856,7 @@ async function saveNodeSettings(event) {
         notes: ui.settingsNotes.value.trim(),
         active: ui.settingsActive.checked,
         report_interval_s: Number(ui.settingsInterval.value),
+        downlink_window_ms: Number(ui.settingsDownlinkWindow.value),
       }),
     });
     const data = await response.json();

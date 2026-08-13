@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     active                      INTEGER NOT NULL DEFAULT 1,
     desired_report_interval_s   INTEGER NOT NULL DEFAULT 60,
     applied_report_interval_s   INTEGER NOT NULL DEFAULT 60,
+    desired_downlink_window_ms  INTEGER NOT NULL DEFAULT 1500,
+    applied_downlink_window_ms  INTEGER NOT NULL DEFAULT 1500,
     config_revision             INTEGER NOT NULL DEFAULT 0,
     applied_config_revision     INTEGER NOT NULL DEFAULT 0,
     last_config_transaction_id  INTEGER,
@@ -188,6 +190,7 @@ CREATE TABLE IF NOT EXISTS node_commands (
     command_type        TEXT NOT NULL,
     desired_revision    INTEGER NOT NULL,
     report_interval_s   INTEGER NOT NULL,
+    downlink_window_ms  INTEGER NOT NULL DEFAULT 1500,
     status              TEXT NOT NULL,
     created_utc         TEXT NOT NULL,
     last_sent_utc       TEXT,
@@ -270,6 +273,8 @@ def _migrate_nodes(connection: sqlite3.Connection) -> None:
         "active": "INTEGER NOT NULL DEFAULT 1",
         "desired_report_interval_s": "INTEGER NOT NULL DEFAULT 60",
         "applied_report_interval_s": "INTEGER NOT NULL DEFAULT 60",
+        "desired_downlink_window_ms": "INTEGER NOT NULL DEFAULT 1500",
+        "applied_downlink_window_ms": "INTEGER NOT NULL DEFAULT 1500",
         "config_revision": "INTEGER NOT NULL DEFAULT 0",
         "applied_config_revision": "INTEGER NOT NULL DEFAULT 0",
         "last_config_transaction_id": "INTEGER",
@@ -283,6 +288,13 @@ def _migrate_nodes(connection: sqlite3.Connection) -> None:
     for name, declaration in additions.items():
         if name not in columns:
             connection.execute(f"ALTER TABLE nodes ADD COLUMN {name} {declaration}")
+
+
+def _migrate_commands(connection: sqlite3.Connection) -> None:
+    if "downlink_window_ms" not in _column_names(connection, "node_commands"):
+        connection.execute(
+            "ALTER TABLE node_commands ADD COLUMN downlink_window_ms INTEGER NOT NULL DEFAULT 1500"
+        )
 
 
 def _migrate_measurements(connection: sqlite3.Connection) -> None:
@@ -414,6 +426,7 @@ def initialize(database_path: Path) -> None:
         connection.execute(PROVISIONED_TRANSMITTERS_SCHEMA)
         connection.execute(PROVISIONING_RESERVATIONS_SCHEMA)
         connection.execute(COMMANDS_SCHEMA)
+        _migrate_commands(connection)
         _migrate_measurements(connection)
         connection.execute(MEASUREMENTS_SCHEMA)
         connection.execute(
@@ -481,6 +494,7 @@ def _reconcile_reported_config(
 
     reported_revision = int(decoded["config_revision"])
     reported_interval = int(decoded["report_interval_s"])
+    reported_window = int(decoded.get("downlink_window_ms") or 1500)
     node = connection.execute(
         """
         SELECT config_revision, applied_config_revision
@@ -493,15 +507,15 @@ def _reconcile_reported_config(
 
     connection.execute(
         """
-        UPDATE nodes SET applied_report_interval_s = ?,
+        UPDATE nodes SET applied_report_interval_s = ?, applied_downlink_window_ms = ?,
             applied_config_revision = ? WHERE node_id = ?
         """,
-        (reported_interval, reported_revision, node_id),
+        (reported_interval, reported_window, reported_revision, node_id),
     )
 
     pending = connection.execute(
         """
-        SELECT transaction_id, desired_revision, report_interval_s
+        SELECT transaction_id, desired_revision, report_interval_s, downlink_window_ms
         FROM node_commands
         WHERE node_id = ? AND status IN ('queued', 'sent')
         ORDER BY transaction_id DESC LIMIT 1
@@ -512,6 +526,7 @@ def _reconcile_reported_config(
         if (
             reported_revision == int(pending["desired_revision"])
             and reported_interval == int(pending["report_interval_s"])
+            and reported_window == int(pending["downlink_window_ms"])
         ):
             connection.execute(
                 """
@@ -534,11 +549,11 @@ def _reconcile_reported_config(
     if reported_revision > desired_revision:
         connection.execute(
             """
-            UPDATE nodes SET desired_report_interval_s = ?,
+            UPDATE nodes SET desired_report_interval_s = ?, desired_downlink_window_ms = ?,
                 config_revision = ?, last_config_status = 'applied'
             WHERE node_id = ?
             """,
-            (reported_interval, reported_revision, node_id),
+            (reported_interval, reported_window, reported_revision, node_id),
         )
     elif reported_revision == desired_revision:
         connection.execute(
@@ -711,6 +726,7 @@ NODE_QUERY = """
         n.last_rssi_dbm_x2, n.last_snr_db_quarters,
         n.sensor_valid, n.sensor_error, n.location, n.notes, n.active,
         n.desired_report_interval_s, n.applied_report_interval_s,
+        n.desired_downlink_window_ms, n.applied_downlink_window_ms,
         n.config_revision, n.applied_config_revision,
         n.last_config_transaction_id, n.last_config_status,
         n.firmware_version, n.firmware_updated_utc,
@@ -784,12 +800,13 @@ def update_node_settings(
     notes: str,
     active: bool,
     report_interval_s: int,
+    downlink_window_ms: int = 1500,
 ) -> dict[str, Any]:
     """Apply server metadata and queue a device update when needed."""
     now = _utc_now()
     with connect(database_path) as connection:
         node = connection.execute(
-            "SELECT desired_report_interval_s, config_revision FROM nodes WHERE node_id = ?",
+            "SELECT desired_report_interval_s, desired_downlink_window_ms, config_revision FROM nodes WHERE node_id = ?",
             (node_id,),
         ).fetchone()
         if node is None:
@@ -841,7 +858,8 @@ def update_node_settings(
                     (node_id, requested_tub_id, now),
                 )
 
-        if report_interval_s != int(node["desired_report_interval_s"]):
+        if (report_interval_s != int(node["desired_report_interval_s"]) or
+                downlink_window_ms != int(node["desired_downlink_window_ms"])):
             revision = int(node["config_revision"]) + 1
             connection.execute(
                 """
@@ -854,20 +872,20 @@ def update_node_settings(
                 """
                 INSERT INTO node_commands (
                     node_id, command_type, desired_revision,
-                    report_interval_s, status, created_utc
-                ) VALUES (?, 'set_config', ?, ?, 'queued', ?)
+                    report_interval_s, downlink_window_ms, status, created_utc
+                ) VALUES (?, 'set_config', ?, ?, ?, 'queued', ?)
                 """,
-                (node_id, revision, report_interval_s, now),
+                (node_id, revision, report_interval_s, downlink_window_ms, now),
             )
             transaction_id = int(cursor.lastrowid)
             connection.execute(
                 """
-                UPDATE nodes SET desired_report_interval_s = ?,
+                UPDATE nodes SET desired_report_interval_s = ?, desired_downlink_window_ms = ?,
                     config_revision = ?, last_config_transaction_id = ?,
                     last_config_status = 'queued'
                 WHERE node_id = ?
                 """,
-                (report_interval_s, revision, transaction_id, node_id),
+                (report_interval_s, downlink_window_ms, revision, transaction_id, node_id),
             )
 
     updated = get_node(database_path, node_id)
@@ -934,6 +952,7 @@ def acknowledge_command(
     transaction_id: int,
     config_revision: int,
     report_interval_s: int,
+    downlink_window_ms: int,
     status: int,
 ) -> bool:
     """Mark an acknowledged transaction applied or rejected."""
@@ -964,12 +983,12 @@ def acknowledge_command(
         if status == 0:
             connection.execute(
                 """
-                UPDATE nodes SET applied_report_interval_s = ?,
+                UPDATE nodes SET applied_report_interval_s = ?, applied_downlink_window_ms = ?,
                     applied_config_revision = ?, last_config_transaction_id = ?,
                     last_config_status = 'applied'
                 WHERE node_id = ?
                 """,
-                (report_interval_s, config_revision, transaction_id, node_id),
+                (report_interval_s, downlink_window_ms, config_revision, transaction_id, node_id),
             )
         else:
             connection.execute(

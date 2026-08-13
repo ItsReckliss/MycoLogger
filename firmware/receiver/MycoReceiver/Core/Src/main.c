@@ -37,7 +37,7 @@
 #define LINK_ACK_TURNAROUND_MS      350U
 
 #define PROTOCOL_VERSION             1U
-#define FIRMWARE_VERSION       "0.8.0"
+#define FIRMWARE_VERSION       "0.9.0"
 #define IWDG_KEY_ENABLE          0xCCCCU
 #define IWDG_KEY_WRITE_ACCESS    0x5555U
 #define IWDG_KEY_REFRESH         0xAAAAU

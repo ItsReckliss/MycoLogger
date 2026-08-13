@@ -50,7 +50,7 @@ firmware hang that prevents a full state-machine pass from completing.
 
 ## Configuration downlink
 
-Type `0x80` is a 22-byte server-to-node configuration transaction:
+Type `0x80` is a 26-byte server-to-node configuration transaction:
 
 | Offset | Size | Field |
 |---:|---:|---|
@@ -61,10 +61,11 @@ Type `0x80` is a 22-byte server-to-node configuration transaction:
 | 10 | 4 | Transaction ID |
 | 14 | 4 | Desired configuration revision |
 | 18 | 4 | Report interval in seconds |
+| 22 | 4 | Downlink receive-window duration in milliseconds |
 
-Type `0x81` is a 23-byte immediate node-to-server acknowledgment. It contains
+Type `0x81` is a 27-byte immediate node-to-server acknowledgment. It contains
 the node ID, transaction ID, current revision, one-byte status, and current
-report interval. Status `0` means applied; nonzero values indicate stale data,
+report interval and downlink receive-window duration. Status `0` means applied; nonzero values indicate stale data,
 an invalid interval, or a flash write failure.
 
 Type `0x82` is a 14-byte receiver-to-node link acknowledgment. Bytes 6-9 hold

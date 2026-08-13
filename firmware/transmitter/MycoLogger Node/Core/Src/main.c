@@ -53,9 +53,9 @@
 #define NETWORK_FAIL_BLINK_COUNT         5U
 #define RADIO_RETRY_INTERVAL_MS     5000U
 #define RADIO_ERROR_PATTERN_MS      2000U
-#define SENSOR_PACKET_SIZE            47U
-#define CONFIG_PACKET_SIZE            22U
-#define CONFIG_ACK_PACKET_SIZE        23U
+#define SENSOR_PACKET_SIZE            51U
+#define CONFIG_PACKET_SIZE            26U
+#define CONFIG_ACK_PACKET_SIZE        27U
 #define TEST_PACKET_VERSION            1U
 #define TEST_PACKET_SENSOR_READING     2U
 #define TEST_PACKET_LINK_CHECK         3U
@@ -67,7 +67,7 @@
 #define DEFAULT_NODE_ID                0U
 #define FIRMWARE_VERSION_MAJOR         0U
 #define FIRMWARE_VERSION_MINOR         8U
-#define FIRMWARE_VERSION_PATCH         2U
+#define FIRMWARE_VERSION_PATCH         4U
 #define IWDG_KEY_ENABLE             0xCCCCU
 #define IWDG_KEY_WRITE_ACCESS       0x5555U
 #define IWDG_KEY_REFRESH            0xAAAAU
@@ -251,6 +251,7 @@ static void BuildSensorPacket(uint8_t *packet,
   WriteUint32BigEndian(&packet[39], g_boot_reset_flags);
   WriteUint16BigEndian(&packet[43], sensorFailureCount);
   WriteUint16BigEndian(&packet[45], radioFailureCount);
+  WriteUint32BigEndian(&packet[47], config->downlink_window_ms);
 }
 
 static bool ApplyConfigPacket(const SX1262RxPacket *packet,
@@ -279,12 +280,14 @@ static bool ApplyConfigPacket(const SX1262RxPacket *packet,
   *transactionId = ReadUint32BigEndian(&packet->payload[10]);
   revision = ReadUint32BigEndian(&packet->payload[14]);
   reportIntervalS = ReadUint32BigEndian(&packet->payload[18]);
+  uint32_t downlinkWindowMs = ReadUint32BigEndian(&packet->payload[22]);
 
   return NodeConfig_Apply(config,
                           targetNodeId,
                           *transactionId,
                           revision,
                           reportIntervalS,
+                          downlinkWindowMs,
                           status);
 }
 
@@ -304,6 +307,7 @@ static void BuildConfigAckPacket(uint8_t *packet,
   WriteUint32BigEndian(&packet[14], config->revision);
   packet[18] = status;
   WriteUint32BigEndian(&packet[19], config->report_interval_ms / 1000U);
+  WriteUint32BigEndian(&packet[23], config->downlink_window_ms);
 }
 
 static bool IsLinkAckPacket(const SX1262RxPacket *packet,

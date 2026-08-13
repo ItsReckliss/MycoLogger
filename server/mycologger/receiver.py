@@ -249,6 +249,7 @@ class ReceiverService:
                 transaction_id=int(decoded["transaction_id"]),
                 config_revision=int(decoded["config_revision"]),
                 report_interval_s=int(decoded["report_interval_s"]),
+                downlink_window_ms=int(decoded.get("downlink_window_ms") or 1500),
                 status=int(decoded["config_status"]),
             )
             if acknowledged:

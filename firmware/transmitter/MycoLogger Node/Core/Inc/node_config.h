@@ -45,6 +45,7 @@ bool NodeConfig_Apply(MycoNodeConfig *config,
                       uint32_t transaction_id,
                       uint32_t revision,
                       uint32_t report_interval_s,
+                      uint32_t downlink_window_ms,
                       uint8_t *status);
 
 #endif /* NODE_CONFIG_H */

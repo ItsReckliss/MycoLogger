@@ -38,14 +38,14 @@ Last reviewed: 2026-08-13.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build: v0.8.2.
+- Transmitter source/build: v0.8.4 (not yet physically flashed).
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
   flashed with v0.8.2 and registered to that permanent node ID. Its independent
   watchdog was bench-tested through an intentional unrefreshed timeout and
   confirmed by the captured `IWDGRSTF` reset-cause flag.
-- Receiver source/build: v0.8.0. The physical receiver remains on v0.7.0;
-  its watchdog reset has been bench-tested, but the new boot-link configuration
-  delivery behavior awaits a user-performed USB flash.
+- Receiver source/build: v0.9.0. The physical receiver remains on v0.8.0;
+  its watchdog reset has been bench-tested, but boot-link configuration delivery
+  and downlink-window configuration await a user-performed USB flash.
 - Node 1 reports transmitter firmware `0.8.2` and its original 60-second
   interval after a real erased-page recovery test. Its current test interval is
   15 seconds. The SCD41's automatic self-calibration has been explicitly
@@ -235,9 +235,10 @@ firmware/receiver/MycoReceiver/Debug/MycoReceiver.elf
   object per line.
 - Sensor packets include node ID, sequence, uptime, sensor values/diagnostic,
   active configuration, battery voltage, and transmitter firmware version.
-- Configuration is a targeted, revisioned, idempotent downlink followed by a
-  transmitter acknowledgement. Uplinks also report active configuration so the
-  server can recover after a missed ACK or database replacement.
+- Configuration is a targeted, revisioned, idempotent downlink of report
+  interval and downlink receive-window duration, followed by a transmitter
+  acknowledgement. Uplinks also report active configuration so the server can
+  recover after a missed ACK or database replacement.
 
 Authoritative layouts:
 

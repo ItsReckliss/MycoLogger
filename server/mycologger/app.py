@@ -76,6 +76,7 @@ class NodeSettingsUpdate(BaseModel):
     notes: str = Field(default="", max_length=2000)
     active: bool = True
     report_interval_s: int = Field(ge=15, le=604800)
+    downlink_window_ms: int = Field(ge=100, le=60000)
 
 
 class GrowUpdate(BaseModel):
@@ -330,6 +331,7 @@ def save_node(node_id: int, update: NodeSettingsUpdate) -> dict[str, object]:
             notes=update.notes,
             active=update.active,
             report_interval_s=update.report_interval_s,
+            downlink_window_ms=update.downlink_window_ms,
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Node not found") from exc
