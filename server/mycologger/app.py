@@ -354,12 +354,12 @@ def tubs() -> dict[str, object]:
 
 
 @app.get("/api/grows")
-def current_grows(hours: int = Query(default=72, ge=1, le=744)) -> dict[str, object]:
+def current_grows(hours: int = Query(default=24, ge=1, le=744)) -> dict[str, object]:
     return {"grows": get_current_grows(settings.database_path, hours=hours)}
 
 
 @app.get("/api/archive")
-def archive(hours: int = Query(default=72, ge=1, le=744)) -> dict[str, object]:
+def archive(hours: int = Query(default=24, ge=1, le=744)) -> dict[str, object]:
     return {
         "past_grows": get_archived_grows(
             settings.database_path, category="past_grow", hours=hours
@@ -373,7 +373,7 @@ def archive(hours: int = Query(default=72, ge=1, le=744)) -> dict[str, object]:
 
 
 @app.get("/api/grows/{tub_id}")
-def grow(tub_id: int, hours: int = Query(default=72, ge=1, le=744)) -> dict[str, object]:
+def grow(tub_id: int, hours: int = Query(default=24, ge=1, le=744)) -> dict[str, object]:
     result = get_grow(settings.database_path, tub_id, hours=hours)
     if result is None:
         raise HTTPException(status_code=404, detail="Current grow not found")

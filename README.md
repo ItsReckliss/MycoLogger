@@ -296,9 +296,9 @@ Implemented dashboard/data features include:
 - configurable report interval and downlink receive-window duration delivered
   through the receiver;
 - current tubs with stable-scale, vertically separated temperature, humidity,
-  and CO2 graph lanes, dotted window-average guides, and selectable 1 hour,
-  1 day, 3 day, 7 day, and 1 month ranges; every valid stored measurement is
-  plotted, with hover/touch value inspection;
+  and CO2 graph lanes, dotted window-average guides, a default 1-day view, and
+  selectable 1 hour, 1 day, 3 day, 7 day, and 1 month ranges; every valid
+  stored measurement is plotted, with hover/touch value inspection;
 - current spawn jars, preparation/inoculation/break-and-shake records, and
   culture/species-aware spawning into tubs;
 - explicit tub and jar lifecycle actions, including contamination outcomes,

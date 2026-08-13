@@ -205,11 +205,11 @@ const GROW_RANGES = [
 ];
 
 function rangeForGrow(tubId) {
-  return growRangeHours.get(Number(tubId)) || 72;
+  return growRangeHours.get(Number(tubId)) || 24;
 }
 
 function rangeDefinition(hours) {
-  return GROW_RANGES.find((range) => range.hours === Number(hours)) || GROW_RANGES[2];
+  return GROW_RANGES.find((range) => range.hours === Number(hours)) || GROW_RANGES[1];
 }
 
 function showView(name) {
@@ -782,12 +782,12 @@ async function refreshJars() {
 
 async function refreshGrows() {
   try {
-    const response = await fetch("/api/grows?hours=72", { cache: "no-store" });
+    const response = await fetch("/api/grows?hours=24", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
     cachedGrows = await Promise.all(data.grows.map(async (grow) => {
       const hours = rangeForGrow(grow.tub_id);
-      if (hours === 72) return grow;
+      if (hours === 24) return grow;
       const customResponse = await fetch(`/api/grows/${grow.tub_id}?hours=${hours}`, { cache: "no-store" });
       if (!customResponse.ok) return grow;
       const customData = await customResponse.json();
@@ -827,12 +827,12 @@ function renderArchive() {
 
 async function refreshArchive() {
   try {
-    const response = await fetch("/api/archive?hours=72", { cache: "no-store" });
+    const response = await fetch("/api/archive?hours=24", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
     const loadCustomRanges = (records) => Promise.all(records.map(async (grow) => {
       const hours = rangeForGrow(grow.tub_id);
-      if (hours === 72) return grow;
+      if (hours === 24) return grow;
       const customResponse = await fetch(`/api/grows/${grow.tub_id}?hours=${hours}`, { cache: "no-store" });
       if (!customResponse.ok) return grow;
       return (await customResponse.json()).grow;
