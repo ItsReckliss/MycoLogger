@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -43,10 +44,12 @@ from mycologger.photo_metadata import extract_capture_time
 from mycologger.receiver import ReceiverService, find_receiver_port
 from PIL import Image
 from tools.provision_transmitter import (
+    CONFIG_SIZE,
     CONFIG_LAYOUT_VERSION,
     CONFIG_MAGIC,
     CONFIG_PROVISIONING_MARKER,
     build_config_image,
+    build_redundant_config_images,
     fnv1a32,
     parse_config_image,
     validate_firmware_image,
@@ -136,6 +139,22 @@ def config_ack_record(
     }
 
 
+def link_check_record(*, node_id: int = 1, tx_sequence: int = 1) -> dict:
+    payload = bytearray(b"MYCO")
+    payload.extend((1, 3))
+    payload.extend(node_id.to_bytes(4, "big"))
+    payload.extend(tx_sequence.to_bytes(4, "big"))
+    return {
+        "v": 1,
+        "type": "packet",
+        "seq": tx_sequence,
+        "length": len(payload),
+        "rssi_dbm_x2": -44,
+        "snr_db_quarters": 36,
+        "payload_hex": payload.hex(),
+    }
+
+
 class DiscoveryTests(unittest.TestCase):
     def test_prefers_product_name(self) -> None:
         ports = [
@@ -213,20 +232,33 @@ class ProtocolTests(unittest.TestCase):
         import struct
 
         image = build_config_image(2, 900, 1500)
-        self.assertEqual(len(image), 32)
-        values = struct.unpack("<8I", image)
+        self.assertEqual(len(image), CONFIG_SIZE)
+        values = struct.unpack("<10I", image)
         self.assertEqual(
-            values[:5],
-            (CONFIG_MAGIC, CONFIG_LAYOUT_VERSION, 2, 900000, 1500),
+            values[:6],
+            (CONFIG_MAGIC, CONFIG_LAYOUT_VERSION, 1, 2, 900000, 1500),
         )
-        self.assertEqual(values[5:7], (0, CONFIG_PROVISIONING_MARKER))
-        self.assertEqual(values[7], fnv1a32(image[:28]))
+        self.assertEqual(values[6:8], (0, CONFIG_PROVISIONING_MARKER))
+        self.assertEqual(values[9], fnv1a32(image[:36]))
 
         parsed = parse_config_image(image)
         self.assertIsNotNone(parsed)
         assert parsed is not None
         self.assertEqual(parsed["node_id"], 2)
         self.assertEqual(parsed["report_interval_s"], 900)
+
+    def test_provisioning_creates_two_valid_ordered_records(self) -> None:
+        first, second = build_redundant_config_images(2, 900, 1500,
+                                                       revision=4,
+                                                       last_transaction_id=9)
+        parsed_first = parse_config_image(first)
+        parsed_second = parse_config_image(second)
+        self.assertIsNotNone(parsed_first)
+        self.assertIsNotNone(parsed_second)
+        assert parsed_first is not None and parsed_second is not None
+        self.assertEqual(parsed_first["generation"], 1)
+        self.assertEqual(parsed_second["generation"], 2)
+        self.assertEqual(parsed_second["revision"], 4)
 
     def test_invalid_provisioning_config_is_not_reused(self) -> None:
         image = bytearray(build_config_image(2, 900, 1500))
@@ -318,6 +350,20 @@ class IngestionTests(unittest.TestCase):
         )
         self.assertEqual(self.service.snapshot()["firmware_version"], "0.6.1")
 
+    def test_receiver_reset_flags_are_cached_from_status(self) -> None:
+        self.assertTrue(
+            self.ingest(
+                {
+                    "v": 1,
+                    "type": "status",
+                    "uptime_ms": 5000,
+                    "radio_state": "rx",
+                    "reset_flags": 0x20000000,
+                }
+            )
+        )
+        self.assertEqual(self.service.snapshot()["reset_flags"], 0x20000000)
+
     def test_sensor_packet_creates_node_and_measurement(self) -> None:
         self.assertTrue(self.ingest(sensor_record()))
         counts = get_counts(self.database_path)
@@ -326,6 +372,29 @@ class IngestionTests(unittest.TestCase):
         node = get_nodes(self.database_path)[0]
         self.assertEqual(node["co2_ppm"], 733)
         self.assertEqual(node["rssi_dbm"], -22)
+
+    def test_link_check_delivers_a_queued_config_without_storing_a_measurement(self) -> None:
+        self.assertTrue(self.ingest(sensor_record()))
+        update_node_settings(
+            self.database_path,
+            1,
+            name="Node 1",
+            tub_name="",
+            location="",
+            notes="",
+            active=True,
+            report_interval_s=120,
+        )
+        commands: list[bytes] = []
+        self.assertTrue(
+            self.service.process_line(
+                (json.dumps(link_check_record()) + "\n").encode(),
+                command_writer=commands.append,
+            )
+        )
+        self.assertEqual(len(commands), 1)
+        self.assertTrue(commands[0].startswith(b"CFG 1 "))
+        self.assertEqual(get_counts(self.database_path)["measurements"], 1)
 
     def test_provisioning_reserves_next_free_id_and_registers_uid(self) -> None:
         self.assertTrue(self.ingest(sensor_record(node_id=1)))

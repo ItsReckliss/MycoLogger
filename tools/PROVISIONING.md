@@ -51,7 +51,14 @@ checkbox only when the entered report interval and downlink window should
 replace the saved values; the node ID still follows the Automatic/explicit
 rules above.
 
-The application and 32-byte configuration record are then written and verified.
+The application and two independently valid 40-byte configuration records are
+then written and verified. The two final STM32U031 flash pages contain identical
+settings with ordered generation counters. During a later over-the-air
+configuration change, firmware erases and writes only the older page, verifies
+the new record and checksum, and leaves the previous page intact until then.
+An interrupted erase/write therefore restarts using the last known-good record.
+This protects every setting stored in the record; add future remotely editable
+settings to that record to give them the same recovery behavior.
 The server registration is completed before the MCU is reset into normal
 operation. If an update or server finalization fails, the utility restores the
 previous configuration for an existing node. A brand-new failed provisioning

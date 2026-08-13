@@ -35,15 +35,15 @@ Maintenance rules:
   - [ ] Decide how SCD41 calibration will work inside tubs; do not assume that
         automatic self-calibration will regularly see fresh outdoor air.
   - [ ] Add configurable temperature compensation/offset.
-- [ ] Add an independent watchdog to both transmitter and receiver firmware.
+- [x] Add an independent watchdog to both transmitter and receiver firmware.
   - [x] ~~Add and bench-test an approximately 8-second IWDG in the transmitter.~~
     - [x] ~~Implement and build transmitter v0.7.0, refreshed only by successful
           main-loop progress.~~
     - [x] ~~Reconnect the ST-Link, flash Node 1, and deliberately verify IWDGRSTF.~~
-  - [ ] Add and bench-test an independent watchdog in the receiver firmware.
+  - [x] Add and bench-test an independent watchdog in the receiver firmware.
     - [x] ~~Implement receiver v0.7.0 watchdog code and expose raw reset flags
           in status JSON.~~
-    - [ ] Build, flash the physical receiver, and deliberately verify an IWDG
+    - [x] Build, flash the physical receiver, and deliberately verify an IWDG
           reset.
 - [ ] Report transmitter diagnostics.
   - [x] ~~Report and cache transmitter firmware version.~~
@@ -51,10 +51,12 @@ Maintenance rules:
   - [x] ~~Report and cache reset cause over the radio.~~
   - [ ] Add a persistent transmitter boot count.
   - [x] ~~Report and cache sensor and radio operation-failure counts.~~
-- [ ] Make persistent transmitter configuration resilient to power loss.
-  - [ ] Use two flash records/pages with generation counters and checksums.
-  - [ ] Write and verify a new record before retiring the previous record.
-  - [ ] Test loss of power during configuration updates.
+- [x] ~~Make persistent transmitter configuration resilient to power loss.~~
+  - [x] ~~Use two flash records/pages with generation counters and checksums.~~
+  - [x] ~~Write and verify a new record before retiring the previous record.~~
+  - [x] ~~Test loss of power during configuration updates by erasing the older
+        page on Node 1, resetting it, and confirming it reported normally from
+        the surviving newer page; restore and verify both records afterward.~~
 - [ ] Perform extended bench testing of the boot link-check exchange, remote
       configuration, retries, duplicate packets, and receiver disconnects.
 

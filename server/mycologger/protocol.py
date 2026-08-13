@@ -38,11 +38,11 @@ def decode_radio_payload(record: dict[str, Any]) -> dict[str, Any] | None:
     except ValueError:
         return None
 
-    if len(payload) < 19 or payload[:4] != b"MYCO":
+    if len(payload) < 14 or payload[:4] != b"MYCO":
         return None
     version = payload[4]
     packet_type = payload[5]
-    if version != 1 or packet_type not in (1, 2, 0x81):
+    if version != 1 or packet_type not in (1, 2, 3, 0x81):
         return None
     if packet_type == 2 and len(payload) < 26:
         return None
@@ -58,6 +58,14 @@ def decode_radio_payload(record: dict[str, Any]) -> dict[str, Any] | None:
             "config_revision": int.from_bytes(payload[14:18], "big"),
             "config_status": payload[18],
             "report_interval_s": int.from_bytes(payload[19:23], "big"),
+        }
+
+    if packet_type == 3:
+        return {
+            "protocol": version,
+            "packet_type": "link_check",
+            "node_id": int.from_bytes(payload[6:10], "big"),
+            "tx_sequence": int.from_bytes(payload[10:14], "big"),
         }
 
     flags = payload[18]

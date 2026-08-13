@@ -13,6 +13,7 @@ typedef struct
     uint32_t downlink_window_ms;
     uint32_t revision;
     uint32_t last_transaction_id;
+    uint32_t generation;
 } MycoNodeConfig;
 
 enum

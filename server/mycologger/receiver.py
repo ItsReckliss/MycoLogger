@@ -39,6 +39,8 @@ class ReceiverState:
     radio_model: str | None = None
     frequency_hz: int | None = None
     firmware_version: str | None = None
+    reset_flags: int | None = None
+    last_radio_error: str | None = None
     last_record_utc: str | None = None
     last_packet_utc: str | None = None
     records_received: int = 0
@@ -211,6 +213,8 @@ class ReceiverService:
             changes: dict[str, Any] = {"radio_state": record.get("radio_state")}
             if record.get("fw"):
                 changes["firmware_version"] = record["fw"]
+            if isinstance(record.get("reset_flags"), int):
+                changes["reset_flags"] = record["reset_flags"]
             self._set_state(**changes)
             return True
         if record_type == "hello":
@@ -222,6 +226,10 @@ class ReceiverService:
                 radio_model=record.get("model"),
                 frequency_hz=record.get("frequency_hz"),
             )
+            return True
+        if record_type == "radio_error":
+            detail = str(record.get("error") or "Receiver radio error")
+            self._set_state(last_radio_error=detail, last_error=detail)
             return True
         if record_type != "packet":
             return True
@@ -246,6 +254,19 @@ class ReceiverService:
             if acknowledged:
                 self._increment("config_acks_received")
             return acknowledged
+
+        if decoded["packet_type"] == "link_check":
+            if command_writer is not None:
+                command = get_pending_command(
+                    self.database_path, int(decoded["node_id"])
+                )
+                if command is not None:
+                    command_writer(encode_usb_config_command(command))
+                    mark_command_sent(
+                        self.database_path, int(command["transaction_id"])
+                    )
+                    self._increment("commands_sent")
+            return True
 
         try:
             result = store_packet(self.database_path, decoded, record, now)

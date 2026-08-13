@@ -74,7 +74,8 @@ match its current request.
 
 Type `3` is the matching 14-byte node-to-receiver boot link check. Bytes 6-9
 contain the node ID and bytes 10-13 contain a short-lived check sequence. The
-receiver answers it locally without forwarding it to the database service.
+receiver forwards it to the host and waits 350 ms before its local answer, so a
+queued configuration command can use that same boot-check receive window.
 
 Sensor diagnostic values are:
 

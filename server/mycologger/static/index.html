@@ -47,6 +47,9 @@
           <button class="nav-item" type="button" data-view="receiver">
             <span class="nav-icon">⌁</span><span>Receiver</span>
           </button>
+          <button class="nav-item" type="button" data-view="diagnostics">
+            <span class="nav-icon">!</span><span>Diagnostics</span>
+          </button>
           <button class="nav-item" type="button" data-view="configuration">
             <span class="nav-icon">⚙</span><span>Configuration</span>
           </button>
@@ -161,8 +164,17 @@
           <section class="view" data-view-panel="receiver">
             <div class="section-heading"><div><h2>USB receiver</h2><p>Serial connection and LoRa receiver status.</p></div></div>
             <div class="form-grid">
-              <div class="panel settings-panel"><h3>Connection</h3><label>Status<input id="receiver-form-state" value="Checking..." readonly /></label><label>Serial port<input id="receiver-form-port" value="Automatic detection" readonly /></label><label>Firmware<input id="receiver-firmware" value="Unknown" readonly /></label><label>Baud rate<input value="115200" readonly /></label><div class="property-list compact"><div><span>Records this run</span><strong id="receiver-record-count">0</strong></div><div><span>Packets this run</span><strong id="receiver-packet-count">0</strong></div></div></div>
+              <div class="panel settings-panel"><h3>Connection</h3><label>Status<input id="receiver-form-state" value="Checking..." readonly /></label><label>Serial port<input id="receiver-form-port" value="Automatic detection" readonly /></label><label>Firmware<input id="receiver-firmware" value="Unknown" readonly /></label><label>Last reset flags<input id="receiver-reset-flags" value="Waiting for status" readonly /></label><label>Baud rate<input value="115200" readonly /></label><div class="property-list compact"><div><span>Records this run</span><strong id="receiver-record-count">0</strong></div><div><span>Packets this run</span><strong id="receiver-packet-count">0</strong></div></div></div>
               <div class="panel settings-panel"><h3>Radio</h3><label>Frequency<input id="receiver-frequency" value="915 MHz" readonly /></label><label>Radio IC<input id="receiver-model" value="SX1262" readonly /></label><label>State<input id="receiver-radio-state" value="Waiting for receiver" readonly /></label><div class="property-list compact"><div><span>Measurements stored</span><strong id="receiver-stored-count">0</strong></div><div><span>Duplicates ignored</span><strong id="receiver-duplicate-count">0</strong></div></div></div>
+            </div>
+          </section>
+
+          <section class="view" data-view-panel="diagnostics">
+            <div class="section-heading"><div><h2>Diagnostics</h2><p>Active server, receiver, and transmitter conditions that need attention.</p></div><button class="button" id="diagnostics-refresh" type="button">Refresh</button></div>
+            <div class="panel diagnostics-panel">
+              <div class="diagnostics-summary"><strong id="diagnostics-count">Checking...</strong><span id="diagnostics-summary">Waiting for system status.</span></div>
+              <div class="diagnostics-list" id="diagnostics-list"></div>
+              <div class="empty-state diagnostics-empty" id="diagnostics-empty"><strong>No active diagnostics.</strong><span>The server, receiver, and reporting nodes are currently healthy.</span></div>
             </div>
           </section>
 

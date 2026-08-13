@@ -46,9 +46,11 @@
 #define CONFIG_BLINK_COUNT              6U
 #define CONFIG_BLINK_ON_TIME_MS        45U
 #define CONFIG_BLINK_OFF_TIME_MS       55U
-#define NETWORK_CHECK_MAX_ATTEMPTS       3U
-#define NETWORK_FAIL_BLINK_COUNT         2U
-#define NETWORK_FAIL_BLINK_TIME_MS     250U
+#define NETWORK_CHECK_DURATION_MS    30000U
+#define NETWORK_BLINK_ON_TIME_MS       100U
+#define NETWORK_BLINK_OFF_TIME_MS      100U
+#define NETWORK_BLINK_PAUSE_MS        1000U
+#define NETWORK_FAIL_BLINK_COUNT         5U
 #define RADIO_RETRY_INTERVAL_MS     5000U
 #define RADIO_ERROR_PATTERN_MS      2000U
 #define SENSOR_PACKET_SIZE            47U
@@ -65,7 +67,7 @@
 #define DEFAULT_NODE_ID                0U
 #define FIRMWARE_VERSION_MAJOR         0U
 #define FIRMWARE_VERSION_MINOR         8U
-#define FIRMWARE_VERSION_PATCH         0U
+#define FIRMWARE_VERSION_PATCH         2U
 #define IWDG_KEY_ENABLE             0xCCCCU
 #define IWDG_KEY_WRITE_ACCESS       0x5555U
 #define IWDG_KEY_REFRESH            0xAAAAU
@@ -155,6 +157,26 @@ static void IncrementFailureCounter(uint16_t *counter)
   {
     (*counter)++;
   }
+}
+
+static bool NetworkCheckIsStillAllowed(uint32_t now,
+                                       uint32_t started)
+{
+  return (now - started) < NETWORK_CHECK_DURATION_MS;
+}
+
+static bool NetworkIndicatorIsOn(uint32_t now, uint32_t started)
+{
+  const uint32_t cycle = NETWORK_BLINK_ON_TIME_MS +
+                         NETWORK_BLINK_OFF_TIME_MS +
+                         NETWORK_BLINK_ON_TIME_MS +
+                         NETWORK_BLINK_PAUSE_MS;
+  uint32_t phase = (now - started) % cycle;
+
+  return (phase < NETWORK_BLINK_ON_TIME_MS) ||
+         ((phase >= (NETWORK_BLINK_ON_TIME_MS + NETWORK_BLINK_OFF_TIME_MS)) &&
+          (phase < (NETWORK_BLINK_ON_TIME_MS + NETWORK_BLINK_OFF_TIME_MS +
+                    NETWORK_BLINK_ON_TIME_MS)));
 }
 
 static void WriteUint32BigEndian(uint8_t *destination, uint32_t value)
@@ -405,8 +427,8 @@ int main(void)
   bool networkLinkTransmitActive = false;
   bool networkConfirmationPending = true;
   bool networkStartupCheckActive = radioReady;
-  uint8_t networkCheckAttempts = 0U;
   uint32_t networkCheckSequence = 0U;
+  uint32_t networkCheckStartedTick = HAL_GetTick();
   SCD41Measurement sensorMeasurement = {0};
   uint32_t lastRadioInitTick = HAL_GetTick();
   uint32_t lastSensorCycleTick = HAL_GetTick();
@@ -533,7 +555,7 @@ int main(void)
         IncrementFailureCounter(&radioFailureCount);
       }
       if (radioReady && networkConfirmationPending &&
-          (networkCheckAttempts < NETWORK_CHECK_MAX_ATTEMPTS))
+          NetworkCheckIsStillAllowed(now, networkCheckStartedTick))
       {
         networkStartupCheckActive = true;
         networkLinkPacketPending = true;
@@ -543,14 +565,13 @@ int main(void)
     if (radioReady && networkLinkPacketPending &&
         !SX1262_TX_IsActive())
     {
-      networkCheckSequence = (uint32_t)networkCheckAttempts + 1U;
+      networkCheckSequence++;
       BuildLinkCheckPacket(linkCheckPacket,
                            &nodeConfig,
                            networkCheckSequence);
       if (SX1262_TX_Start(linkCheckPacket, sizeof(linkCheckPacket)) ==
           SX1262_TX_STATUS_OK)
       {
-        networkCheckAttempts++;
         networkLinkPacketPending = false;
         networkLinkTransmitActive = true;
       }
@@ -696,7 +717,7 @@ int main(void)
         else if (networkStartupCheckActive)
         {
           /* An unrelated downlink is not proof that this node was reached. */
-          if (networkCheckAttempts < NETWORK_CHECK_MAX_ATTEMPTS)
+          if (NetworkCheckIsStillAllowed(now, networkCheckStartedTick))
           {
             networkLinkPacketPending = true;
           }
@@ -704,8 +725,8 @@ int main(void)
           {
             networkStartupCheckActive = false;
             ledSequenceBlinksRemaining = NETWORK_FAIL_BLINK_COUNT;
-            ledSequenceOnTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
-            ledSequenceOffTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
+            ledSequenceOnTimeMs = NETWORK_BLINK_ON_TIME_MS;
+            ledSequenceOffTimeMs = NETWORK_BLINK_OFF_TIME_MS;
             ledSequenceActive = true;
             ledSequenceLedOn = true;
             ledSequenceTick = now;
@@ -752,7 +773,7 @@ int main(void)
         downlinkReceiveActive = false;
         if (networkStartupCheckActive)
         {
-          if (networkCheckAttempts < NETWORK_CHECK_MAX_ATTEMPTS)
+          if (NetworkCheckIsStillAllowed(now, networkCheckStartedTick))
           {
             networkLinkPacketPending = true;
           }
@@ -760,8 +781,8 @@ int main(void)
           {
             networkStartupCheckActive = false;
             ledSequenceBlinksRemaining = NETWORK_FAIL_BLINK_COUNT;
-            ledSequenceOnTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
-            ledSequenceOffTimeMs = NETWORK_FAIL_BLINK_TIME_MS;
+            ledSequenceOnTimeMs = NETWORK_BLINK_ON_TIME_MS;
+            ledSequenceOffTimeMs = NETWORK_BLINK_OFF_TIME_MS;
             ledSequenceActive = true;
             ledSequenceLedOn = true;
             ledSequenceTick = now;
@@ -826,8 +847,11 @@ int main(void)
     }
     else if (networkStartupCheckActive)
     {
-      /* Solid only during the bounded power-on receiver-range check. */
-      HAL_GPIO_WritePin(Debug_LED_GPIO_Port, Debug_LED_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(Debug_LED_GPIO_Port,
+                        Debug_LED_Pin,
+                        NetworkIndicatorIsOn(now, networkCheckStartedTick)
+                            ? GPIO_PIN_SET
+                            : GPIO_PIN_RESET);
     }
     else if (radioReady && sensorCycleFailed &&
              (((now % RADIO_ERROR_PATTERN_MS) < 100U) ||

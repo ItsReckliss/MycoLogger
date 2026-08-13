@@ -18,6 +18,7 @@ const ui = {
   receiverFormState: document.querySelector("#receiver-form-state"),
   receiverFormPort: document.querySelector("#receiver-form-port"),
   receiverFirmware: document.querySelector("#receiver-firmware"),
+  receiverResetFlags: document.querySelector("#receiver-reset-flags"),
   receiverRecordCount: document.querySelector("#receiver-record-count"),
   receiverPacketCount: document.querySelector("#receiver-packet-count"),
   receiverStoredCount: document.querySelector("#receiver-stored-count"),
@@ -60,6 +61,11 @@ const ui = {
   nodeFilter: document.querySelector("#node-filter"),
   apiStatus: document.querySelector("#api-status"),
   browserHost: document.querySelector("#browser-host"),
+  diagnosticsRefresh: document.querySelector("#diagnostics-refresh"),
+  diagnosticsCount: document.querySelector("#diagnostics-count"),
+  diagnosticsSummary: document.querySelector("#diagnostics-summary"),
+  diagnosticsList: document.querySelector("#diagnostics-list"),
+  diagnosticsEmpty: document.querySelector("#diagnostics-empty"),
   settingsDialog: document.querySelector("#node-settings-dialog"),
   settingsForm: document.querySelector("#node-settings-form"),
   settingsNodeId: document.querySelector("#settings-node-id"),
@@ -1951,6 +1957,7 @@ function setReceiverState(receiver) {
   ui.receiverFormState.value = state;
   ui.receiverFormPort.value = receiver.port || "Automatic detection";
   ui.receiverFirmware.value = receiver.firmware_version || "Unknown";
+  ui.receiverResetFlags.value = formatResetFlags(receiver.reset_flags);
   ui.receiverRecordCount.textContent = receiver.records_received.toLocaleString();
   ui.receiverPacketCount.textContent = receiver.packets_received.toLocaleString();
   ui.receiverStoredCount.textContent = receiver.measurements_stored.toLocaleString();
@@ -1964,6 +1971,49 @@ function setReceiverState(receiver) {
   ui.receiverRadioState.value = receiver.radio_state || "Waiting for receiver";
 }
 
+function formatResetFlags(flags) {
+  if (flags === null || flags === undefined) return "Waiting for status";
+  return `0x${Number(flags).toString(16).toUpperCase().padStart(8, "0")}`;
+}
+
+function makeDiagnostic(component, title, detail) {
+  const item = document.createElement("article");
+  item.className = "diagnostic-item";
+  const kind = document.createElement("span");
+  kind.className = "diagnostic-kind";
+  kind.textContent = component;
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const message = document.createElement("span");
+  message.textContent = detail;
+  item.append(kind, heading, message);
+  return item;
+}
+
+function renderDiagnostics(receiver, nodes) {
+  const issues = [];
+  if (!receiver.connected || !receiver.verified) {
+    issues.push(["Receiver", "USB receiver unavailable", receiver.message || "The server is waiting for the receiver."]);
+  }
+  if (receiver.last_error) issues.push(["Server", "Receiver-service error", receiver.last_error]);
+  if (receiver.last_radio_error) issues.push(["Receiver", "Radio error", receiver.last_radio_error]);
+  if (Number(receiver.storage_errors) > 0) issues.push(["Server", "Packet storage errors", `${receiver.storage_errors} packet${Number(receiver.storage_errors) === 1 ? "" : "s"} could not be written during this run.`]);
+  if (Number(receiver.invalid_records) > 0) issues.push(["Receiver", "Invalid USB records", `${receiver.invalid_records} invalid record${Number(receiver.invalid_records) === 1 ? "" : "s"} received during this run.`]);
+  if ((Number(receiver.reset_flags) & 0x20000000) !== 0) issues.push(["Receiver", "Watchdog reset detected", `Latest reset flags: ${formatResetFlags(receiver.reset_flags)}.`]);
+  nodes.forEach((node) => {
+    const label = `${node.name} (Node ${node.node_id})`;
+    if (!node.sensor_valid || (node.sensor_error && node.sensor_error !== "none")) issues.push(["Node", `${label}: sensor fault`, node.sensor_error || "Latest sensor reading was invalid."]);
+    if (Number(node.sensor_failure_count) > 0) issues.push(["Node", `${label}: sensor failures`, `${node.sensor_failure_count} recoverable sensor failure${Number(node.sensor_failure_count) === 1 ? "" : "s"} since boot.`]);
+    if (Number(node.radio_failure_count) > 0) issues.push(["Node", `${label}: radio failures`, `${node.radio_failure_count} local radio operation failure${Number(node.radio_failure_count) === 1 ? "" : "s"} since boot.`]);
+    if ((Number(node.last_reset_flags) & 0x20000000) !== 0) issues.push(["Node", `${label}: watchdog reset`, `Latest reset flags: ${formatResetFlags(node.last_reset_flags)}.`]);
+  });
+  ui.diagnosticsList.replaceChildren(...issues.map((issue) => makeDiagnostic(...issue)));
+  ui.diagnosticsList.hidden = issues.length === 0;
+  ui.diagnosticsEmpty.hidden = issues.length !== 0;
+  ui.diagnosticsCount.textContent = issues.length === 0 ? "All clear" : `${issues.length} active issue${issues.length === 1 ? "" : "s"}`;
+  ui.diagnosticsSummary.textContent = issues.length === 0 ? "No active server, receiver, or node conditions need attention." : "These conditions are derived from the latest live status and node reports.";
+}
+
 async function refreshDashboard() {
   ui.refreshButton.disabled = true;
   try {
@@ -1974,6 +2024,7 @@ async function refreshDashboard() {
 
     setReceiverState(data.receiver);
     cachedNodes = data.nodes;
+    renderDiagnostics(data.receiver, cachedNodes);
     ui.nodeCount.textContent = data.counts.nodes.toLocaleString();
     ui.measurementCount.textContent = data.counts.measurements.toLocaleString();
     ui.pendingCommandCount.textContent = data.counts.pending_commands.toLocaleString();
@@ -2005,6 +2056,7 @@ ui.openViewButtons.forEach((button) => button.addEventListener("click", () => sh
 ui.menuButton.addEventListener("click", () => ui.sidebar.classList.toggle("open"));
 ui.nodeFilter.addEventListener("input", renderNodes);
 ui.refreshButton.addEventListener("click", refreshDashboard);
+ui.diagnosticsRefresh.addEventListener("click", refreshDashboard);
 ui.settingsForm.addEventListener("submit", saveNodeSettings);
 document.querySelector("#settings-close").addEventListener("click", () => ui.settingsDialog.close());
 document.querySelector("#settings-cancel").addEventListener("click", () => ui.settingsDialog.close());

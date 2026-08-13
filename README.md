@@ -34,22 +34,20 @@ with environment-specific paths and serial-port names.
 
 ## Current development state
 
-Last reviewed: 2026-08-12.
+Last reviewed: 2026-08-13.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build: v0.8.0.
+- Transmitter source/build: v0.8.2.
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
-  flashed with v0.8.0 and registered to that permanent node ID. Its independent
+  flashed with v0.8.2 and registered to that permanent node ID. Its independent
   watchdog was bench-tested through an intentional unrefreshed timeout and
   confirmed by the captured `IWDGRSTF` reset-cause flag.
-- Receiver source: v0.7.0; its local build and physical USB flash are pending.
-- Physical USB receiver: connected and receiving packets, but its installed
-  version is still unknown/older. It must be put into its bootloader and flashed
-  with receiver v0.7.0 before receiver version queries and the newest link/config
-  behavior can be assumed.
-- Node 1 reports transmitter firmware `0.8.0` and calibrated battery voltage
-  `3.752 V` to the dashboard, matching the simultaneous battery-lead reading.
+- Receiver source/build: v0.8.0. The physical receiver remains on v0.7.0;
+  its watchdog reset has been bench-tested, but the new boot-link configuration
+  delivery behavior awaits a user-performed USB flash.
+- Node 1 reports transmitter firmware `0.8.2` and its original 60-second
+  interval after a real erased-page recovery test.
 - The BTT Pi target is `mycopi.local`, but deployment of the current server as a
   managed Pi service is not complete.
 - Git remote: `https://github.com/ItsReckliss/MycoLogger.git`.
@@ -63,7 +61,7 @@ VREFINT uses channel 12. Transmitter v0.6.5 converts those channels separately
 to avoid stale EOC results and applies a `0.9992` calibration factor derived
 from a simultaneous `3.752 V` battery-lead measurement.
 
-Transmitter v0.8.0 enables the STM32 independent watchdog with an approximately
+Transmitter v0.8.2 enables the STM32 independent watchdog with an approximately
 8-second LSI-clocked timeout. The main state-machine loop refreshes it once per
  second only after it completes a full pass, while dead loops and fault handlers deliberately do not. The watchdog
 is frozen when a debugger halts the core, and the raw RCC reset-cause flags are
@@ -73,11 +71,12 @@ current boot; the server stores each snapshot and exposes the latest values on
 the node API. Recoverable sensor/radio failures are retried and counted rather
 than causing watchdog resets.
 
-Receiver v0.7.0 source also enables its independent watchdog. Because the STM32F042
+Receiver v0.8.0 source also enables its independent watchdog. Because the STM32F042
 LSI has a much wider specified tolerance, its 12.8-second nominal setting is
 approximately 8.5 to 17.1 seconds across the full oscillator range. Receiver
 status JSON includes the raw `reset_flags` value for watchdog-reset diagnosis.
-The receiver image still needs to be built and physically verified.
+The v0.7.0 receiver image was physically verified through a deliberately
+unrefreshed watchdog timeout.
 
 ## Hardware
 
@@ -128,17 +127,18 @@ rules.
 
 ### Transmitter
 
-The transmitter uses a universal application image. A board-specific record in
-the final 2 KB flash page stores its node ID, report interval, receive-window
-duration, configuration revision, last transaction ID, and checksum. An erased
-or invalid record produces silent Node 0; it does not transmit until
-provisioned.
+The transmitter uses a universal application image. Two board-specific records
+in the final two 2 KB flash pages store its node ID, report interval,
+receive-window duration, configuration revision, last transaction ID,
+generation, and checksum. An erased or invalid record produces silent Node 0;
+it does not transmit until provisioned. Remote updates write and verify the
+older page first, so an interrupted update restarts from the surviving record.
 
 Normal behavior:
 
-- Power-up starts an addressed LoRa link check. The LED stays on while awaiting
-  the receiver, then turns off after confirmation. Failure is shown with a
-  bounded pattern rather than leaving the LED on indefinitely.
+- Power-up starts an addressed LoRa link check. It double-blinks once per second
+  for up to 30 seconds, stops on confirmation, and shows five final blinks if no
+  receiver answers; scheduled transmissions still continue afterward.
 - A scheduled report powers the SCD41, takes a fresh single-shot measurement,
   reads battery voltage, transmits, and opens a short downlink window.
 - Pressing the debug button requests a fresh sensor conversion and immediate
@@ -156,9 +156,10 @@ Priority 1 work in the to-do list.
 ### Receiver
 
 The receiver continuously listens for LoRa packets and emits one JSON object per
-line over USB. It blinks its LED according to the received node ID. It can send
-queued configuration commands during a transmitter's receive window and answer
-the transmitter's boot link check locally.
+line over USB. It blinks its LED according to the received node ID. Receiver
+v0.8.0 forwards a boot link check to the host, leaves a 350 ms configuration
+turnaround, then answers it; this lets queued configuration reach a node during
+the boot check as well as its normal receive window.
 
 Receiver v0.6.0:
 
@@ -298,9 +299,9 @@ TO-DO.md    Living prioritized roadmap and completed foundation
 ```
 
 Build output under each STM32 project's `Debug/` directory is generally
-generated, but the transmitter's validated universal HEX in
-`firmware/transmitter/provisioning/` is intentionally kept as the flash utility
-default.
+generated. The provisioner defaults to the current transmitter Debug ELF so its
+linked two-page configuration reservation matches the record format it writes;
+select a release HEX only after it has been exported from that same build.
 
 ## Verification
 
@@ -312,8 +313,8 @@ $env:PYTHONPATH="$PWD;$PWD\server"
 ```
 
 Both STM32 projects should also be rebuilt in CubeIDE after firmware changes.
-The transmitter link must remain below `0x08007800`, which is the start of its
-reserved configuration page.
+The transmitter link must remain below `0x08007000`, which is the start of its
+two reserved configuration pages.
 
 ## Development workflow
 
@@ -333,9 +334,9 @@ reserved configuration page.
 The complete ordered list is in [TO-DO.md](TO-DO.md). The most important current
 items are:
 
-1. Flash and verify receiver v0.6.0 on the physical USB receiver.
+1. Flash and verify receiver v0.8.0 on the physical USB receiver.
 2. Correct and validate the SCD41 measurement/power strategy.
-3. Add watchdogs and persistent-configuration power-loss resilience.
+3. Perform extended testing of the completed boot link/configuration exchange.
 4. Reduce transmitter consumption with SX1262 sleep and STM32 Stop 2.
 5. Finish the managed Pi deployment, backups, and health monitoring.
 6. Export the complete editable EasyEDA hardware projects and revision-matched

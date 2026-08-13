@@ -34,10 +34,10 @@
 #define BUTTON_DEBOUNCE_TIME_MS    30U
 #define USB_STARTUP_DELAY_MS      1500U
 #define USB_MESSAGE_SIZE           320U
-#define LINK_ACK_TURNAROUND_MS       30U
+#define LINK_ACK_TURNAROUND_MS      350U
 
 #define PROTOCOL_VERSION             1U
-#define FIRMWARE_VERSION       "0.7.0"
+#define FIRMWARE_VERSION       "0.8.0"
 #define IWDG_KEY_ENABLE          0xCCCCU
 #define IWDG_KEY_WRITE_ACCESS    0x5555U
 #define IWDG_KEY_REFRESH         0xAAAAU
@@ -566,14 +566,9 @@ int main(void)
                     Packet_GetNetworkCheck(&radio_packet,
                                            &link_ack_node_id,
                                            &link_ack_sequence);
-                /* The immediate type-3 check is radio-local and does not
-                   create a database event. Recovery checks piggybacked on a
-                   sensor report are still forwarded normally. */
-                if ((radio_packet.length < 6U) ||
-                    (radio_packet.payload[5] != 3U))
-                {
-                    USB_ReportPacket(&radio_packet, packet_sequence);
-                }
+                /* Forward link checks too. The host can return an already
+                   queued config command before the 350 ms radio turnaround. */
+                USB_ReportPacket(&radio_packet, packet_sequence);
                 if (Packet_GetNodeId(&radio_packet, &packet_node_id) != 0U)
                 {
                     /* Restart the indication with the newest packet's node. */

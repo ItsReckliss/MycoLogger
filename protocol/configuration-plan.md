@@ -12,9 +12,12 @@ Node firmware owns a single persistent configuration object. Current fields are:
 - downlink receive-window duration in milliseconds
 - configuration revision and last applied transaction ID
 
-The final 2 KB transmitter flash page is reserved for this object. A magic,
-layout version, and checksum reject erased or incompatible data. Flash is only
-erased when an actual new configuration transaction is accepted.
+The final two 2 KB transmitter flash pages are reserved for independently valid
+copies of this object. Each has a magic, layout version, generation counter, and
+checksum, which reject erased or incompatible data. When an actual new
+configuration transaction is accepted, firmware writes and verifies the older
+page first; the newest valid record always wins at boot. A power loss during an
+erase or write therefore falls back to the other page.
 
 Application firmware is universal and compiles with Node ID 0. An erased or
 invalid configuration page therefore enters a silent provisioning state: the
@@ -24,7 +27,7 @@ UID through ST-LINK, reserves an unused ID from the server, writes this same
 application image plus a board-specific configuration object, verifies it, and
 registers the UID-to-node mapping before reset. A valid saved node ID is loaded
 independently of the application's default, so normal firmware updates preserve
-identity when page 15 is not erased.
+identity when the reserved pages are not erased.
 
 ## Implemented exchange
 

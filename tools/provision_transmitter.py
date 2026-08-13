@@ -24,16 +24,21 @@ DEFAULT_FIRMWARE = (
     PROJECT_ROOT
     / "firmware"
     / "transmitter"
-    / "provisioning"
-    / "MycoLogger-Transmitter-Universal.hex"
+    / "MycoLogger Node"
+    / "Debug"
+    / "MycoLogger Node.elf"
 )
 UID_ADDRESS = 0x1FFF3E50
 UID_SIZE = 12
-CONFIG_ADDRESS = 0x08007800
-CONFIG_PAGE = 15
-CONFIG_SIZE = 32
+CONFIG_ADDRESS_A = 0x08007000
+CONFIG_ADDRESS_B = 0x08007800
+CONFIG_PAGE_A = 14
+CONFIG_PAGE_B = 15
+CONFIG_SIZE = 40
+LEGACY_CONFIG_SIZE = 32
 CONFIG_MAGIC = 0x4D594346
-CONFIG_LAYOUT_VERSION = 1
+CONFIG_LAYOUT_VERSION = 2
+LEGACY_CONFIG_LAYOUT_VERSION = 1
 CONFIG_PROVISIONING_MARKER = 0x50524F56
 
 
@@ -56,6 +61,7 @@ def build_config_image(
     *,
     revision: int = 0,
     last_transaction_id: int = CONFIG_PROVISIONING_MARKER,
+    generation: int = 1,
 ) -> bytes:
     if not 1 <= node_id <= 0xFFFFFFFE:
         raise ProvisioningError("Node ID must be between 1 and 4294967294")
@@ -66,38 +72,73 @@ def build_config_image(
     values = (
         CONFIG_MAGIC,
         CONFIG_LAYOUT_VERSION,
+        generation,
         node_id,
         report_interval_s * 1000,
         downlink_window_ms,
         revision,
         last_transaction_id,
+        0,
     )
-    body = struct.pack("<7I", *values)
+    body = struct.pack("<9I", *values)
     return body + struct.pack("<I", fnv1a32(body))
 
 
 def parse_config_image(image: bytes) -> dict[str, int] | None:
     """Decode a valid reserved-page record without trusting erased flash."""
+    if len(image) == LEGACY_CONFIG_SIZE:
+        values = struct.unpack("<8I", image)
+        if (
+            values[0] != CONFIG_MAGIC
+            or values[1] != LEGACY_CONFIG_LAYOUT_VERSION
+            or not 1 <= values[2] <= 0xFFFFFFFE
+            or values[3] % 1000 != 0
+            or not 15 <= values[3] // 1000 <= 604800
+            or not 100 <= values[4] <= 60000
+            or values[7] != fnv1a32(image[:28])
+        ):
+            return None
+        return {"node_id": values[2], "report_interval_s": values[3] // 1000,
+                "downlink_window_ms": values[4], "revision": values[5],
+                "last_transaction_id": values[6], "generation": 0}
     if len(image) != CONFIG_SIZE:
         return None
-    values = struct.unpack("<8I", image)
+    values = struct.unpack("<10I", image)
     if (
         values[0] != CONFIG_MAGIC
         or values[1] != CONFIG_LAYOUT_VERSION
-        or not 1 <= values[2] <= 0xFFFFFFFE
-        or values[3] % 1000 != 0
-        or not 15 <= values[3] // 1000 <= 604800
-        or not 100 <= values[4] <= 60000
-        or values[7] != fnv1a32(image[:28])
+        or not 1 <= values[3] <= 0xFFFFFFFE
+        or values[4] % 1000 != 0
+        or not 15 <= values[4] // 1000 <= 604800
+        or not 100 <= values[5] <= 60000
+        or values[9] != fnv1a32(image[:36])
     ):
         return None
     return {
-        "node_id": values[2],
-        "report_interval_s": values[3] // 1000,
-        "downlink_window_ms": values[4],
-        "revision": values[5],
-        "last_transaction_id": values[6],
+        "node_id": values[3],
+        "report_interval_s": values[4] // 1000,
+        "downlink_window_ms": values[5],
+        "revision": values[6],
+        "last_transaction_id": values[7],
+        "generation": values[2],
     }
+
+
+def build_redundant_config_images(
+    node_id: int, report_interval_s: int, downlink_window_ms: int, *,
+    revision: int, last_transaction_id: int,
+) -> tuple[bytes, bytes]:
+    """Create two independently valid records; page B is the newer one."""
+    return (
+        build_config_image(node_id, report_interval_s, downlink_window_ms,
+                           revision=revision,
+                           last_transaction_id=last_transaction_id,
+                           generation=1),
+        build_config_image(node_id, report_interval_s, downlink_window_ms,
+                           revision=revision,
+                           last_transaction_id=last_transaction_id,
+                           generation=2),
+    )
 
 
 def validate_firmware_image(path: Path) -> None:
@@ -105,7 +146,7 @@ def validate_firmware_image(path: Path) -> None:
         raise ProvisioningError(f"Firmware file not found: {path}")
     suffix = path.suffix.casefold()
     if suffix == ".bin":
-        if path.stat().st_size > (CONFIG_ADDRESS - 0x08000000):
+        if path.stat().st_size > (CONFIG_ADDRESS_A - 0x08000000):
             raise ProvisioningError(
                 "Binary firmware overlaps the reserved configuration page"
             )
@@ -142,7 +183,7 @@ def validate_firmware_image(path: Path) -> None:
         elif record_type == 0x00 and size:
             start = upper_address + offset
             end = start + size
-            if start < (CONFIG_ADDRESS + 0x800) and end > CONFIG_ADDRESS:
+            if start < (CONFIG_ADDRESS_B + 0x800) and end > CONFIG_ADDRESS_A:
                 raise ProvisioningError(
                     "Firmware image contains data in the reserved configuration page"
                 )
@@ -277,33 +318,44 @@ class STM32Programmer:
         self.log("Reading the STM32 hardware UID...")
         return self.read_memory(UID_ADDRESS, UID_SIZE).hex().upper()
 
-    def flash_and_verify(self, firmware: Path, config: bytes) -> None:
+    def flash_and_verify(self, firmware: Path, configs: tuple[bytes, bytes]) -> None:
         if not firmware.is_file():
             raise ProvisioningError(f"Firmware file not found: {firmware}")
         with tempfile.TemporaryDirectory(prefix="mycologger-provision-") as directory:
-            config_path = Path(directory) / "node-config.bin"
-            config_path.write_bytes(config)
+            config_a_path = Path(directory) / "node-config-a.bin"
+            config_b_path = Path(directory) / "node-config-b.bin"
+            config_a_path.write_bytes(configs[0])
+            config_b_path.write_bytes(configs[1])
             self.log(f"Flashing universal firmware: {firmware.name}")
             self.run("-halt", "-w", str(firmware), "-v", timeout=150)
-            self.log("Writing the reserved node configuration page...")
+            self.log("Writing redundant node configuration pages...")
             self.run(
-                "-halt", "-w", str(config_path), hex(CONFIG_ADDRESS), "-v", timeout=90
+                "-halt", "-e", str(CONFIG_PAGE_A), timeout=60
             )
-            self.log("Reading the configuration back for byte-for-byte verification...")
-            readback = self.read_memory(CONFIG_ADDRESS, len(config))
-            if readback != config:
-                raise ProvisioningError("Configuration readback did not match the written image")
+            self.run("-halt", "-e", str(CONFIG_PAGE_B), timeout=60)
+            for address, path, expected in (
+                (CONFIG_ADDRESS_A, config_a_path, configs[0]),
+                (CONFIG_ADDRESS_B, config_b_path, configs[1]),
+            ):
+                self.run("-halt", "-w", str(path), hex(address), "-v", timeout=90)
+                if self.read_memory(address, len(expected)) != expected:
+                    raise ProvisioningError("Configuration readback did not match the written image")
 
     def rollback_unprovisioned(self) -> None:
         self.log("Rolling the transmitter back to silent/unprovisioned state...")
-        self.run("-halt", "-e", str(CONFIG_PAGE), "-rst", timeout=60)
+        self.run("-halt", "-e", str(CONFIG_PAGE_A), timeout=60)
+        self.run("-halt", "-e", str(CONFIG_PAGE_B), "-rst", timeout=60)
 
-    def restore_config(self, config: bytes) -> None:
+    def restore_config(self, page_images: tuple[bytes, bytes]) -> None:
         self.log("Restoring the transmitter's previous node configuration...")
         with tempfile.TemporaryDirectory(prefix="mycologger-restore-") as directory:
-            config_path = Path(directory) / "node-config.bin"
-            config_path.write_bytes(config)
-            self.run("-halt", "-w", str(config_path), hex(CONFIG_ADDRESS), "-v", timeout=90)
+            self.run("-halt", "-e", str(CONFIG_PAGE_A), timeout=60)
+            self.run("-halt", "-e", str(CONFIG_PAGE_B), timeout=60)
+            for address, name, image in ((CONFIG_ADDRESS_A, "a.bin", page_images[0]),
+                                         (CONFIG_ADDRESS_B, "b.bin", page_images[1])):
+                config_path = Path(directory) / name
+                config_path.write_bytes(image)
+                self.run("-halt", "-w", str(config_path), hex(address), "-v", timeout=90)
 
     def reset(self) -> None:
         self.run("-rst", timeout=30)
@@ -327,8 +379,15 @@ def provision(
     )
     hardware_uid = programmer.read_hardware_uid()
     log(f"Detected transmitter UID: {hardware_uid}")
-    existing_config_image = programmer.read_memory(CONFIG_ADDRESS, CONFIG_SIZE)
-    existing_config = parse_config_image(existing_config_image)
+    page_images = (
+        programmer.read_memory(CONFIG_ADDRESS_A, CONFIG_SIZE),
+        programmer.read_memory(CONFIG_ADDRESS_B, CONFIG_SIZE),
+    )
+    legacy_image = programmer.read_memory(CONFIG_ADDRESS_B, LEGACY_CONFIG_SIZE)
+    candidates = [item for item in (parse_config_image(page_images[0]),
+                                     parse_config_image(page_images[1]),
+                                     parse_config_image(legacy_image)) if item is not None]
+    existing_config = max(candidates, key=lambda item: item["generation"], default=None)
     if existing_config is not None:
         log(
             "Detected existing Node "
@@ -381,18 +440,10 @@ def provision(
         existing_config is not None and existing_config["node_id"] != node_id
     )
     if existing_config is not None and preserve_existing_config and not identity_changed:
-        config = existing_config_image
         report_interval_s = existing_config["report_interval_s"]
         downlink_window_ms = existing_config["downlink_window_ms"]
         log("Keeping the existing node ID and device parameters.")
     elif existing_config is not None and identity_changed:
-        config = build_config_image(
-            node_id,
-            (existing_config["report_interval_s"]
-             if preserve_existing_config else report_interval_s),
-            (existing_config["downlink_window_ms"]
-             if preserve_existing_config else downlink_window_ms),
-        )
         report_interval_s = (
             existing_config["report_interval_s"]
             if preserve_existing_config else report_interval_s
@@ -411,21 +462,27 @@ def provision(
             report_interval_s != existing_config["report_interval_s"]
             or downlink_window_ms != existing_config["downlink_window_ms"]
         )
-        config = build_config_image(
-            node_id,
-            report_interval_s,
-            downlink_window_ms,
-            revision=existing_config["revision"] + (1 if changed else 0),
-            last_transaction_id=existing_config["last_transaction_id"],
-        )
+        revision = existing_config["revision"] + (1 if changed else 0)
         log("Keeping the existing node ID and applying the entered parameters.")
     else:
-        config = build_config_image(node_id, report_interval_s, downlink_window_ms)
+        revision = 0
+    if existing_config is not None and identity_changed:
+        revision = existing_config["revision"]
+    if existing_config is not None and preserve_existing_config and not identity_changed:
+        revision = existing_config["revision"]
+    last_transaction_id = (
+        existing_config["last_transaction_id"] if existing_config is not None
+        else CONFIG_PROVISIONING_MARKER
+    )
+    configs = build_redundant_config_images(
+        node_id, report_interval_s, downlink_window_ms, revision=revision,
+        last_transaction_id=last_transaction_id,
+    )
     flash_attempted = False
     registration_completed = False
     try:
         flash_attempted = True
-        programmer.flash_and_verify(firmware, config)
+        programmer.flash_and_verify(firmware, configs)
         log("Registering the verified transmitter with the MycoLogger server...")
         completed = api_request(
             server,
@@ -447,7 +504,7 @@ def provision(
         if flash_attempted and not registration_completed:
             try:
                 if existing_config is not None:
-                    programmer.restore_config(existing_config_image)
+                    programmer.restore_config(page_images)
                 else:
                     programmer.rollback_unprovisioned()
             except Exception as rollback_error:
