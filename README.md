@@ -50,7 +50,8 @@ Last reviewed: 2026-08-13.
   interval after a real erased-page recovery test. Its current test interval is
   15 seconds. The SCD41's automatic self-calibration has been explicitly
   disabled and persisted because tub operation will not provide regular fresh
-  air exposure.
+  air exposure; a CRC-checked `get_automatic_self_calibration_enabled` readback
+  verified the saved value is disabled.
 - The BTT Pi target is `mycopi.local`, but deployment of the current server as a
   managed Pi service is not complete.
 - Git remote: `https://github.com/ItsReckliss/MycoLogger.git`.
