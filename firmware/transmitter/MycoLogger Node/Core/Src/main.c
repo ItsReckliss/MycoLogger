@@ -67,7 +67,7 @@
 #define DEFAULT_NODE_ID                0U
 #define FIRMWARE_VERSION_MAJOR         0U
 #define FIRMWARE_VERSION_MINOR         8U
-#define FIRMWARE_VERSION_PATCH         4U
+#define FIRMWARE_VERSION_PATCH         5U
 #define IWDG_KEY_ENABLE             0xCCCCU
 #define IWDG_KEY_WRITE_ACCESS       0x5555U
 #define IWDG_KEY_REFRESH            0xAAAAU
@@ -817,6 +817,19 @@ int main(void)
         radioReady = false;
         lastRadioInitTick = now;
       }
+    }
+
+    /* The SX1262 is otherwise left in standby between reports. Warm sleep
+       retains its radio configuration and is exited automatically by Start(). */
+    if (radioReady && !networkLinkPacketPending && !sensorPacketPending &&
+        !networkLinkTransmitActive && !sensorTransmitActive &&
+        !downlinkReceiveActive && !configAckTransmitActive &&
+        !SX1262_TX_IsActive() &&
+        (SX1262_TX_Sleep() != SX1262_TX_STATUS_OK))
+    {
+      IncrementFailureCounter(&radioFailureCount);
+      radioReady = false;
+      lastRadioInitTick = now;
     }
 
     if (ledSequenceActive)

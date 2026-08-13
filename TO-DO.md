@@ -88,7 +88,10 @@ Maintenance rules:
   - [ ] LoRa transmit energy.
   - [ ] LoRa receive-window and boot-check energy.
   - [ ] LDO, load-switch, LED, and resistor-divider losses.
-- [ ] Put the SX1262 into sleep mode between radio operations.
+- [x] ~~Put the SX1262 into sleep mode between radio operations.~~ Warm-start
+      sleep is in transmitter v0.8.5; Node 1 completed three 20-second
+      post-flash reports with no radio failures. Measure the resulting current
+      separately with the power profiler.
 - [ ] Replace the current SysTick-driven `__WFI()` loop with STM32 Stop 2.
   - [ ] Wake from an RTC or low-power timer for scheduled reports.
   - [ ] Wake from the debug button interrupt.

@@ -38,17 +38,17 @@ Last reviewed: 2026-08-13.
 
 - Server: v0.8.0, currently running locally on the Windows development PC at
   `http://127.0.0.1:8080`.
-- Transmitter source/build: v0.8.4 (not yet physically flashed).
+- Transmitter source/build and Node 1: v0.8.5.
 - Physical test transmitter: Node 1, UID `0F0023000650335848323020`, currently
-  flashed with v0.8.2 and registered to that permanent node ID. Its independent
+  flashed with v0.8.5 and registered to that permanent node ID. Its independent
   watchdog was bench-tested through an intentional unrefreshed timeout and
   confirmed by the captured `IWDGRSTF` reset-cause flag.
 - Receiver source/build: v0.9.0. The physical receiver remains on v0.8.0;
   its watchdog reset has been bench-tested, but boot-link configuration delivery
   and downlink-window configuration await a user-performed USB flash.
-- Node 1 reports transmitter firmware `0.8.2` and its original 60-second
+- Node 1 reports transmitter firmware `0.8.5` and its original 60-second
   interval after a real erased-page recovery test. Its current test interval is
-  15 seconds. The SCD41's automatic self-calibration has been explicitly
+  20 seconds. The SCD41's automatic self-calibration has been explicitly
   disabled and persisted because tub operation will not provide regular fresh
   air exposure; a CRC-checked `get_automatic_self_calibration_enabled` readback
   verified the saved value is disabled.
@@ -74,6 +74,12 @@ the reset flags and saturating sensor/radio operation-failure counters for the
 current boot; the server stores each snapshot and exposes the latest values on
 the node API. Recoverable sensor/radio failures are retried and counted rather
 than causing watchdog resets.
+
+Transmitter v0.8.5 puts the SX1262 into warm-start sleep whenever no radio
+operation is active. Its LoRa configuration is retained and the driver wakes it
+with NSS before the next transmit or downlink receive window. Node 1 completed
+three 20-second post-flash reports with a zero radio-failure count; current
+draw still needs power-profiler measurement.
 
 Receiver v0.8.0 source also enables its independent watchdog. Because the STM32F042
 LSI has a much wider specified tolerance, its 12.8-second nominal setting is

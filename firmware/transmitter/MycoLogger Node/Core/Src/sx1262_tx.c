@@ -5,6 +5,7 @@
 #define CMD_SET_STANDBY             0x80U
 #define CMD_SET_RX                  0x82U
 #define CMD_SET_TX                  0x83U
+#define CMD_SET_SLEEP               0x84U
 #define CMD_SET_RF_FREQUENCY        0x86U
 #define CMD_CALIBRATE               0x89U
 #define CMD_SET_PACKET_TYPE         0x8AU
@@ -40,6 +41,7 @@
 #define RADIO_TX_WATCHDOG_MS       3500U
 
 static bool radio_active;
+static bool radio_sleeping;
 static uint32_t radio_tx_started_ms;
 static uint8_t radio_mode;
 
@@ -57,6 +59,7 @@ static bool WriteBuffer(uint8_t offset,
                         uint8_t length);
 static bool ReadBuffer(uint8_t offset, uint8_t *data, uint8_t length);
 static bool GetStatus(uint8_t *status);
+static bool WakeRadio(void);
 static void SelectRadio(void);
 static void DeselectRadio(void);
 static void SPI_Delay(void);
@@ -92,6 +95,7 @@ void SX1262_TX_BusInit(void)
     HAL_GPIO_Init(Radio_DIO1_GPIO_Port, &GPIO_InitStruct);
 
     radio_active = false;
+    radio_sleeping = false;
     radio_mode = 0U;
 }
 
@@ -135,6 +139,7 @@ SX1262TxStatus SX1262_TX_Init(uint8_t *radio_status)
     uint8_t status = 0U;
 
     radio_active = false;
+    radio_sleeping = false;
     radio_mode = 0U;
 
     HAL_GPIO_WritePin(Radio_REST_GPIO_Port, Radio_REST_Pin, GPIO_PIN_RESET);
@@ -238,7 +243,8 @@ SX1262TxStatus SX1262_TX_Start(const uint8_t *payload, uint8_t length)
         return SX1262_TX_STATUS_INVALID_ARGUMENT;
     }
 
-    if (!WriteCommand(CMD_SET_PACKET_PARAMS,
+    if (!WakeRadio() ||
+        !WriteCommand(CMD_SET_PACKET_PARAMS,
                       packet_params,
                       sizeof(packet_params)) ||
         !WriteBuffer(0x00U, payload, length) ||
@@ -318,6 +324,35 @@ bool SX1262_TX_IsActive(void)
     return radio_active;
 }
 
+SX1262TxStatus SX1262_TX_Sleep(void)
+{
+    /* Warm-start preserves the radio configuration and packet buffer. */
+    static const uint8_t warm_start[] = {0x04U};
+
+    if (radio_active)
+    {
+        return SX1262_TX_STATUS_INVALID_ARGUMENT;
+    }
+    if (radio_sleeping)
+    {
+        return SX1262_TX_STATUS_OK;
+    }
+    /* SetSleep is exceptional: BUSY is not waited after NSS rises because the
+       part has already stopped its command interface. */
+    if (!WaitWhileBusy())
+    {
+        return SX1262_TX_STATUS_BUSY_TIMEOUT;
+    }
+    SelectRadio();
+    (void)SPI_Transfer(CMD_SET_SLEEP);
+    (void)SPI_Transfer(warm_start[0]);
+    DeselectRadio();
+
+    radio_mode = 0U;
+    radio_sleeping = true;
+    return SX1262_TX_STATUS_OK;
+}
+
 SX1262TxStatus SX1262_TX_StartReceive(uint32_t window_ms)
 {
     uint8_t packet_params[] = {
@@ -349,7 +384,8 @@ SX1262TxStatus SX1262_TX_StartReceive(uint32_t window_ms)
     rx_timeout[1] = (uint8_t)(timeout_ticks >> 8);
     rx_timeout[2] = (uint8_t)timeout_ticks;
 
-    if (!WriteCommand(CMD_SET_PACKET_PARAMS,
+    if (!WakeRadio() ||
+        !WriteCommand(CMD_SET_PACKET_PARAMS,
                       packet_params,
                       sizeof(packet_params)) ||
         !WriteCommand(CMD_SET_DIO_IRQ_PARAMS,
@@ -607,6 +643,27 @@ static bool GetStatus(uint8_t *status)
     *status = SPI_Transfer(0x00U);
     DeselectRadio();
 
+    return true;
+}
+
+static bool WakeRadio(void)
+{
+    if (!radio_sleeping)
+    {
+        return true;
+    }
+
+    /* The SX1262 leaves sleep when NSS is asserted. No command is needed. */
+    SelectRadio();
+    SPI_Delay();
+    DeselectRadio();
+    HAL_Delay(1U);
+    if (!WaitWhileBusy())
+    {
+        return false;
+    }
+
+    radio_sleeping = false;
     return true;
 }
 

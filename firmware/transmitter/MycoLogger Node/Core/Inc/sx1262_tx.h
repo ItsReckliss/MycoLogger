@@ -56,6 +56,9 @@ SX1262TxStatus SX1262_TX_StartReceive(uint32_t window_ms);
 /** Poll the active receive window and copy one packet when available. */
 SX1262RxEvent SX1262_TX_PollReceive(SX1262RxPacket *packet);
 
+/** Enter warm-start sleep while no transmit or receive operation is active. */
+SX1262TxStatus SX1262_TX_Sleep(void);
+
 /** Return true while a transmission is awaiting completion. */
 bool SX1262_TX_IsActive(void);
 
