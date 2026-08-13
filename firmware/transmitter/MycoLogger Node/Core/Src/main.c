@@ -67,7 +67,7 @@
 #define DEFAULT_NODE_ID                0U
 #define FIRMWARE_VERSION_MAJOR         0U
 #define FIRMWARE_VERSION_MINOR         8U
-#define FIRMWARE_VERSION_PATCH         5U
+#define FIRMWARE_VERSION_PATCH         6U
 #define IWDG_KEY_ENABLE             0xCCCCU
 #define IWDG_KEY_WRITE_ACCESS       0x5555U
 #define IWDG_KEY_REFRESH            0xAAAAU
@@ -76,6 +76,10 @@
 #define IWDG_WINDOW_DISABLED           4095U
 #define IWDG_UPDATE_TIMEOUT_MS           10U
 #define IWDG_REFRESH_INTERVAL_MS       1000U
+#define LPTIM_LSI_HZ                  32000U
+#define LPTIM_STOP_PRESCALER             5U /* /32, therefore 1 kHz. */
+#define LPTIM_TICKS_PER_SECOND        1000U
+#define LPTIM_MAX_SLEEP_SECONDS         65U
 #define RESET_CAUSE_FLAGS (RCC_CSR_OBLRSTF | RCC_CSR_PINRSTF | \
                            RCC_CSR_PWRRSTF | RCC_CSR_SFTRSTF | \
                            RCC_CSR_IWDGRSTF | RCC_CSR_WWDGRSTF | \
@@ -94,6 +98,8 @@
 
 /* Retained for ST-LINK inspection and future over-the-air diagnostics. */
 volatile uint32_t g_boot_reset_flags = 0U;
+volatile bool g_stop_timer_wake = false;
+volatile bool g_debug_button_wake = false;
 
 /* USER CODE END PV */
 
@@ -144,6 +150,98 @@ static bool IndependentWatchdog_Start(void)
 
   IWDG->KR = IWDG_KEY_REFRESH;
   return true;
+}
+
+static bool Stop2_IsWatchdogSafe(void)
+{
+  /* A zero IWDG_STOP option freezes the watchdog during Stop mode. */
+  return (FLASH->OPTR & FLASH_OPTR_IWDG_STOP) == 0U;
+}
+
+static bool Stop2_Init(void)
+{
+  uint32_t started = HAL_GetTick();
+
+  __HAL_RCC_LSI_ENABLE();
+  while ((RCC->CSR & RCC_CSR_LSIRDY) == 0U)
+  {
+    if ((HAL_GetTick() - started) >= IWDG_UPDATE_TIMEOUT_MS)
+    {
+      return false;
+    }
+  }
+
+  __HAL_RCC_LPTIM1_CLK_ENABLE();
+  __HAL_RCC_LPTIM1_CONFIG(RCC_LPTIM1CLKSOURCE_LSI);
+  LPTIM1->CR = 0U;
+  LPTIM1->CFGR = (LPTIM_STOP_PRESCALER << LPTIM_CFGR_PRESC_Pos);
+  LPTIM1->ICR = 0x7FU;
+  LPTIM1->DIER = LPTIM_DIER_ARRMIE;
+  HAL_NVIC_SetPriority(TIM6_DAC_LPTIM1_IRQn, 2U, 0U);
+  HAL_NVIC_EnableIRQ(TIM6_DAC_LPTIM1_IRQn);
+  return true;
+}
+
+static void Stop2_ArmTimer(uint32_t sleep_seconds)
+{
+  uint32_t ticks = sleep_seconds * LPTIM_TICKS_PER_SECOND;
+
+  if (ticks == 0U)
+  {
+    ticks = 1U;
+  }
+  if (ticks > UINT16_MAX)
+  {
+    ticks = UINT16_MAX;
+  }
+
+  LPTIM1->CR = 0U;
+  LPTIM1->ICR = 0x7FU;
+  LPTIM1->CR = LPTIM_CR_ENABLE;
+  LPTIM1->ARR = ticks - 1U;
+  while ((LPTIM1->ISR & LPTIM_ISR_ARROK) == 0U)
+  {
+  }
+  LPTIM1->ICR = LPTIM_ICR_ARROKCF;
+  LPTIM1->CR |= LPTIM_CR_SNGSTRT;
+}
+
+static void Stop2_Enter(uint32_t sleep_seconds)
+{
+  Stop2_ArmTimer(sleep_seconds);
+  g_stop_timer_wake = false;
+  EXTI->RPR1 = EXTI_RPR1_RPIF14;
+  EXTI->FPR1 = EXTI_FPR1_FPIF14;
+  HAL_SuspendTick();
+  MODIFY_REG(PWR->CR1, PWR_CR1_LPMS, PWR_CR1_LPMS_1);
+  SET_BIT(SCB->SCR, SCB_SCR_SLEEPDEEP_Msk);
+  __DSB();
+  __ISB();
+  __WFI();
+  CLEAR_BIT(SCB->SCR, SCB_SCR_SLEEPDEEP_Msk);
+  /* A button wake can arrive before the timer. Do not let the old one-shot
+     expire while a sensor/radio state machine is now running. */
+  LPTIM1->CR = 0U;
+  SystemClock_Config();
+  HAL_ResumeTick();
+}
+
+void LPTIM1_StopWake_IRQHandler(void)
+{
+  if ((LPTIM1->ISR & LPTIM_ISR_ARRM) != 0U)
+  {
+    LPTIM1->ICR = LPTIM_ICR_ARRMCF;
+    g_stop_timer_wake = true;
+  }
+}
+
+void DebugButton_StopWake_IRQHandler(void)
+{
+  if ((EXTI->FPR1 & EXTI_FPR1_FPIF14) != 0U)
+  {
+    EXTI->FPR1 = EXTI_FPR1_FPIF14;
+    g_debug_button_wake = true;
+  }
 }
 
 static void IndependentWatchdog_Refresh(void)
@@ -431,11 +529,14 @@ int main(void)
   bool networkLinkTransmitActive = false;
   bool networkConfirmationPending = true;
   bool networkStartupCheckActive = radioReady;
+  bool stop2Ready = Stop2_IsWatchdogSafe() && Stop2_Init();
   uint32_t networkCheckSequence = 0U;
   uint32_t networkCheckStartedTick = HAL_GetTick();
   SCD41Measurement sensorMeasurement = {0};
   uint32_t lastRadioInitTick = HAL_GetTick();
   uint32_t lastSensorCycleTick = HAL_GetTick();
+  uint32_t stop2ElapsedMs = 0U;
+  uint32_t stop2ArmedMs = 0U;
   uint32_t ledSequenceTick = HAL_GetTick();
   uint32_t ledSequenceBlinksRemaining =
       provisioningConfirmation ? CONFIG_BLINK_COUNT : 0U;
@@ -476,8 +577,18 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     uint32_t now = HAL_GetTick();
-    rawButtonState = HAL_GPIO_ReadPin(Debug_Button_GPIO_Port,
-                                     Debug_Button_Pin);
+    if (g_debug_button_wake)
+    {
+      g_debug_button_wake = false;
+      rawButtonState = GPIO_PIN_RESET;
+      previousRawButtonState = GPIO_PIN_RESET;
+      buttonDebounceTick = now - BUTTON_DEBOUNCE_TIME_MS;
+    }
+    else
+    {
+      rawButtonState = HAL_GPIO_ReadPin(Debug_Button_GPIO_Port,
+                                        Debug_Button_Pin);
+    }
     if (rawButtonState != previousRawButtonState)
     {
       previousRawButtonState = rawButtonState;
@@ -501,6 +612,7 @@ int main(void)
         if (!SCD41_IsActive())
         {
           /* A press always requests a new sensor conversion before transmit. */
+          stop2ElapsedMs = 0U;
           lastSensorCycleTick = now;
           sensorMeasurementValid = false;
           if (SCD41_StartSingleShot() != SCD41_STATUS_OK)
@@ -514,6 +626,13 @@ int main(void)
     }
 
     bool buttonPressed = debouncedButtonState == GPIO_PIN_RESET;
+
+    if (g_stop_timer_wake)
+    {
+      g_stop_timer_wake = false;
+      stop2ElapsedMs += stop2ArmedMs;
+      stop2ArmedMs = 0U;
+    }
 
     if (SCD41_IsActive())
     {
@@ -533,8 +652,10 @@ int main(void)
         sensorPacketPending = true;
       }
     }
-    else if ((now - lastSensorCycleTick) >= nodeConfig.report_interval_ms)
+    else if (((now - lastSensorCycleTick) + stop2ElapsedMs) >=
+             nodeConfig.report_interval_ms)
     {
+      stop2ElapsedMs = 0U;
       HAL_GPIO_WritePin(Sensor_Power_GPIO_Port,
                         Sensor_Power_Pin,
                         GPIO_PIN_RESET);
@@ -901,8 +1022,28 @@ int main(void)
       lastWatchdogRefreshTick = now;
     }
 
-    /* Sleep the CPU until the next SysTick/interrupt while state machines wait. */
-    __WFI();
+    if (stop2Ready && !SCD41_IsActive() && radioReady &&
+        !sensorPacketPending && !sensorTransmitActive &&
+        !downlinkReceiveActive && !configAckTransmitActive &&
+        !networkLinkPacketPending && !networkLinkTransmitActive &&
+        !networkStartupCheckActive && !ledSequenceActive &&
+        !sensorCycleFailed && (debouncedButtonState != GPIO_PIN_RESET))
+    {
+      uint32_t elapsed = (now - lastSensorCycleTick) + stop2ElapsedMs;
+      uint32_t remaining = nodeConfig.report_interval_ms - elapsed;
+      uint32_t sleep_seconds = (remaining + 999U) / 1000U;
+      if (sleep_seconds > LPTIM_MAX_SLEEP_SECONDS)
+      {
+        sleep_seconds = LPTIM_MAX_SLEEP_SECONDS;
+      }
+      stop2ArmedMs = sleep_seconds * 1000U;
+      Stop2_Enter(sleep_seconds);
+    }
+    else
+    {
+      /* Short active waits retain SysTick for state-machine timing. */
+      __WFI();
+    }
   }
   /* USER CODE END 3 */
 }
@@ -967,9 +1108,11 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : Debug_Button_Pin */
   GPIO_InitStruct.Pin = Debug_Button_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(Debug_Button_GPIO_Port, &GPIO_InitStruct);
+  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 1U, 0U);
+  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
   /*Configure GPIO pin : Debug_LED_Pin */
   GPIO_InitStruct.Pin = Debug_LED_Pin;

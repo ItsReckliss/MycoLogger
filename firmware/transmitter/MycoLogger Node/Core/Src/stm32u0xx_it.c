@@ -58,6 +58,9 @@
 
 /* USER CODE BEGIN EV */
 
+extern void LPTIM1_StopWake_IRQHandler(void);
+extern void DebugButton_StopWake_IRQHandler(void);
+
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -141,5 +144,15 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /* USER CODE BEGIN 1 */
+
+void EXTI4_15_IRQHandler(void)
+{
+  DebugButton_StopWake_IRQHandler();
+}
+
+void TIM6_DAC_LPTIM1_IRQHandler(void)
+{
+  LPTIM1_StopWake_IRQHandler();
+}
 
 /* USER CODE END 1 */

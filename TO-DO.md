@@ -93,21 +93,23 @@ Maintenance rules:
       post-flash reports with no radio failures. Measure the resulting current
       separately with the power profiler.
 - [ ] Replace the current SysTick-driven `__WFI()` loop with STM32 Stop 2.
-  - [ ] Use LPTIM1 clocked from the internal LSI as the one-shot report timer;
+  - [x] ~~Use LPTIM1 clocked from the internal LSI as the one-shot report timer;~~
         no external RTC or LSE crystal is required. Use a prescaler so the
         16-bit timer can cover the configured interval, chaining sleeps only
         when an eventual interval exceeds one timer period.
   - [ ] Change the PC14 debug button from polled GPIO to falling-edge EXTI.
         Its ISR must only record a wake request; debounce and start the same
-        measurement/report action after clocks have been restored.
-  - [ ] Disable SysTick while sleeping, clear all LPTIM/EXTI pending flags
-        before WFI, and restore the system clock and SysTick after every wake.
-  - [ ] Read and explicitly verify the `IWDG_STOP` option byte is configured
+        measurement/report action after clocks have been restored. Source is
+        implemented; confirm it with a physical button press on Node 1.
+  - [x] ~~Disable SysTick while sleeping, clear all LPTIM/EXTI pending flags
+        before WFI, and restore the system clock and SysTick after every wake.~~
+  - [x] ~~Read and explicitly verify the `IWDG_STOP` option byte is configured
         to freeze the independent watchdog in Stop mode. The current 8-second
-        watchdog must not run through a 20+ second scheduled sleep.
-  - [ ] Enter Stop 2 only with sensor power off and no sensor, radio, downlink,
+        watchdog must not run through a 20+ second scheduled sleep.~~ Node 1
+        now uses `IWDG_STOP=0`; firmware falls back safely if this differs.
+  - [x] ~~Enter Stop 2 only with sensor power off and no sensor, radio, downlink,
         LED sequence, or configuration-ack state active; retain the normal
-        `__WFI()` path for short active waits.
+        `__WFI()` path for short active waits.~~
 - [ ] Recalculate expected battery life from measured energy per report instead
       of component typical values alone.
 - [ ] Add configurable low-battery and critical-battery thresholds.
